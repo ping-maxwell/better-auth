@@ -100,4 +100,19 @@ if you can't set strict to true, you can enable strictNullChecks:
 You can learn more in our <Link href="/docs/concepts/typescript#typescript-config">TypeScript docs</Link>.
 </Accordion>
 
+<Accordion title="How to seed a user">
+  You can seed an initial user by using the `auth.api.signInEmail` method on a custom seed script that you can then call.
+
+  ```ts title="seed.ts"
+  await auth.api.signInEmail({
+    name: "John Doe",
+    email: "user@example.com",
+    password: "strong-password",
+  });
+  ```
+
+  This will create a new user.
+
+</Accordion>
+
 </Accordions>
