@@ -47,13 +47,15 @@ export const initTransformInput = ({
 
 			let newFieldName: string =
 				newMappedKeys[field] || fields[field].fieldName || field;
-			if (
-				value === undefined &&
-				((!fieldAttributes.defaultValue && !fieldAttributes.transform?.input) ||
-					action === "update")
-			) {
-				continue;
-			}
+				if (
+					value === undefined &&
+					((fieldAttributes.defaultValue === undefined &&
+						!fieldAttributes.transform?.input &&
+						!(action === "update" && fieldAttributes.onUpdate)) ||
+						(action === "update" && !fieldAttributes.onUpdate))
+				) {
+					continue;
+				}
 			// If the value is undefined, but the fieldAttr provides a `defaultValue`, then we'll use that.
 			let newValue = withApplyDefault(value, fieldAttributes, action);
 
@@ -128,8 +130,9 @@ export const initTransformInput = ({
 					options,
 				});
 			}
-
-			transformedData[newFieldName] = newValue;
+			if (newValue !== undefined) {
+				transformedData[newFieldName] = newValue;
+			}
 		}
 		return transformedData;
 	};
