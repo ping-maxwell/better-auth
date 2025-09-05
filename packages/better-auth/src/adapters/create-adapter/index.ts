@@ -6,16 +6,8 @@ import type {
 	AdapterTestDebugLogs,
 	CreateCustomAdapter,
 } from "./types";
-import { initTransformInput } from "./transform-input";
-import { initTransformOutput } from "./transform-output";
-import { initTransformWhere } from "./transform-where";
 import { initDebugLogs } from "./debug-logs";
-import { initIdField } from "./id-field";
-import { initGetDefaultFieldName } from "./get-default-field-name";
-import { initGetDefaultModelName } from "./get-default-model-name";
-import { initGetModelName } from "./get-model-name";
-import { initGetFieldName } from "./get-field-name";
-import { initGetFieldAttributes } from "./get-field-attributes";
+import { initAdapterUtils } from "./init";
 
 export * from "./types";
 
@@ -94,53 +86,22 @@ export const createAdapter =
 			supportsNumericIds: cfg.supportsNumericIds ?? true,
 		};
 		checkIfDatabaseSupportsNumberIds({ config, options });
-		const debugLog = initDebugLogs({ config, debugLogs });
 		const schema = getAuthTables(options);
-		const getDefaultModelName = initGetDefaultModelName({
-			schema,
-			debugLog,
-			config,
-		});
-		const getDefaultFieldName = initGetDefaultFieldName({
-			schema,
-			debugLog,
-			getDefaultModelName,
-		});
-		const getModelName = initGetModelName({
-			config,
-			getDefaultModelName,
-			schema,
-		});
-		const getFieldName = initGetFieldName({
-			getDefaultFieldName,
-			getDefaultModelName,
-			schema,
-		});
-		const idField = initIdField({ config, options, getDefaultModelName });
-		const getFieldAttributes = initGetFieldAttributes({
-			getDefaultFieldName,
-			getDefaultModelName,
-			idField,
-			schema,
-		});
-		const transformInput = initTransformInput({
-			schema,
-			config,
-			options,
-			idField,
-		});
-		const transformOutput = initTransformOutput({
-			schema,
-			config,
-			options,
-		});
-		const transformWhereClause = initTransformWhere({
-			config,
+		const debugLog = initDebugLogs({ config, debugLogs });
+		const {
 			getDefaultFieldName,
 			getDefaultModelName,
 			getFieldAttributes,
 			getFieldName,
+			getModelName,
+			transformInput,
+			transformOutput,
+			transformWhereClause,
+		} = initAdapterUtils({
+			config,
+			debugLog,
 			options,
+			schema,
 		});
 		const adapterInstance = adapter({
 			options,
