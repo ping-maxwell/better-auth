@@ -31,16 +31,18 @@ model User {
 }
 
 model Session {
-  id                   String   @id
+  id                   String     @id
   expiresAt            DateTime
   token                String
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  ipAddress            String?  @db.Text
-  userAgent            String?  @db.Text
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  ipAddress            String?    @db.Text
+  userAgent            String?    @db.Text
   userId               String
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  activeOrganizationId String?  @db.Text
+  user                 User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganizationId String?  
+  workspace            Workspace? @relation(fields: [activeOrganizationId], references: [id], onDelete: SetNull)
+
 
   @@unique([token])
   @@map("session")
@@ -93,6 +95,7 @@ model Workspace {
   logo                 String?               @db.Text
   createdAt            DateTime
   metadata             String?               @db.Text
+  sessions             Session[]
   members              Member[]
   workspaceinvitations WorkspaceInvitation[]
 
