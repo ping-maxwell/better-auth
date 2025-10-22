@@ -9,7 +9,6 @@ import {
 	sql,
 	type InsertQueryBuilder,
 	type Kysely,
-	type RawBuilder,
 	type UpdateQueryBuilder,
 } from "kysely";
 import type {
@@ -192,8 +191,17 @@ export const kyselyAdapter = (
 						operator = "=",
 						connector = "AND",
 					} = condition;
+<<<<<<< HEAD
 					const field = getFieldName({ model, field: _field });
 					value = transformValueToDB(value, model, _field);
+=======
+					let value: any = _value;
+					let field: string | any = getFieldName({
+						model,
+						field: _field,
+					});
+
+>>>>>>> 2cdd8c879 (update: progress)
 					const expr = (eb: any) => {
 						if (operator.toLowerCase() === "in") {
 							return eb(field, "in", Array.isArray(value) ? value : [value]);
@@ -208,42 +216,42 @@ export const kyselyAdapter = (
 						}
 
 						if (operator === "contains") {
-							return eb(field, "like", `%${value}%`);
+							return eb(`${model}.${field}`, "like", `%${value}%`);
 						}
 
 						if (operator === "starts_with") {
-							return eb(field, "like", `${value}%`);
+							return eb(`${model}.${field}`, "like", `${value}%`);
 						}
 
 						if (operator === "ends_with") {
-							return eb(field, "like", `%${value}`);
+							return eb(`${model}.${field}`, "like", `%${value}`);
 						}
 
 						if (operator === "eq") {
-							return eb(field, "=", value);
+							return eb(`${model}.${field}`, "=", value);
 						}
 
 						if (operator === "ne") {
-							return eb(field, "<>", value);
+							return eb(`${model}.${field}`, "<>", value);
 						}
 
 						if (operator === "gt") {
-							return eb(field, ">", value);
+							return eb(`${model}.${field}`, ">", value);
 						}
 
 						if (operator === "gte") {
-							return eb(field, ">=", value);
+							return eb(`${model}.${field}`, ">=", value);
 						}
 
 						if (operator === "lt") {
-							return eb(field, "<", value);
+							return eb(`${model}.${field}`, "<", value);
 						}
 
 						if (operator === "lte") {
-							return eb(field, "<=", value);
+							return eb(`${model}.${field}`, "<=", value);
 						}
 
-						return eb(field, operator, value);
+						return eb(`${model}.${field}`, operator, value);
 					};
 
 					if (connector === "OR") {
@@ -438,8 +446,9 @@ export const kyselyAdapter = (
 					const returned = await withReturning(data, builder, model, []);
 					return transformValueFromDB(returned) as any;
 				},
-				async findOne({ model, where, select }) {
+				async findOne({ model, where, select, join }) {
 					const { and, or } = convertWhereClause(model, where);
+<<<<<<< HEAD
 <<<<<<< HEAD
 					let query = db.selectFrom(model).selectAll();
 =======
@@ -447,12 +456,22 @@ export const kyselyAdapter = (
 
 					// Apply where conditions first
 >>>>>>> 2e6d72b0b (update: kysely working)
+=======
+					let query: any = db.selectFrom(model);
+
+					// Apply where conditions first
+>>>>>>> 2cdd8c879 (update: progress)
 					if (and) {
-						query = query.where((eb) => eb.and(and.map((expr) => expr(eb))));
+						query = query.where((eb: any) =>
+							eb.and(and.map((expr: any) => expr(eb))),
+						);
 					}
 					if (or) {
-						query = query.where((eb) => eb.or(or.map((expr) => expr(eb))));
+						query = query.where((eb: any) =>
+							eb.or(or.map((expr: any) => expr(eb))),
+						);
 					}
+<<<<<<< HEAD
 <<<<<<< HEAD
 					const res = await query.executeTakeFirst();
 					if (!res) return null;
@@ -587,9 +606,85 @@ export const kyselyAdapter = (
 
 					return row as any;
 >>>>>>> 2e6d72b0b (update: kysely working)
+=======
+
+					if (join) {
+						// Add joins
+						for (const [joinModel, joinAttr] of Object.entries(join)) {
+							if (joinAttr.type === "inner") {
+								query = query.innerJoin(
+									joinModel,
+									`${joinModel}.${joinAttr.on.to}`,
+									`${model}.${joinAttr.on.from}`,
+								);
+							} else {
+								query = query.leftJoin(
+									joinModel,
+									`${joinModel}.${joinAttr.on.to}`,
+									`${model}.${joinAttr.on.from}`,
+								);
+							}
+						}
+					}
+
+					// Use selectAll which will handle column naming appropriately
+					// query = query.select([
+					// 	sql`${sql.ref(model)}.*`,
+					// 	...(join
+					// 		? Object.keys(join).map(
+					// 				(joinModel) => sql`${sql.ref(joinModel)}.*`,
+					// 			)
+					// 		: []),
+					// ]);
+
+					console.log(4, query.compile());
+
+					const res = await query.executeTakeFirst();
+					if (!res) return null;
+
+					if (join) {
+						// Restructure the flattened result
+						// Kysely returns columns as `${table}_${column}` when there are joins
+						const result: Record<string, any> = {};
+
+						// Initialize objects for each model
+						result[model] = {};
+						for (const [joinModel] of Object.entries(join)) {
+							result[joinModel] = {};
+						}
+
+						// Distribute columns
+						for (const [key, value] of Object.entries(res)) {
+							const keyStr = String(key).toLowerCase();
+							let assigned = false;
+
+							// Check if key is prefixed with a joined model name
+							for (const [joinModel] of Object.entries(join)) {
+								const prefix = `${joinModel}_`.toLowerCase();
+								if (keyStr.startsWith(prefix)) {
+									const colName = String(key).substring(joinModel.length + 1);
+									result[joinModel]![colName] = value;
+									assigned = true;
+									break;
+								}
+							}
+
+							// If not a prefixed column, assign to main model
+							if (!assigned) {
+								result[model]![key] = value;
+							}
+						}
+
+						console.log(3, result);
+						return result;
+					}
+
+					return res as any;
+>>>>>>> 2cdd8c879 (update: progress)
 				},
-				async findMany({ model, where, limit, offset, sortBy }) {
+				async findMany({ model, where, limit, offset, sortBy, join }) {
 					const { and, or } = convertWhereClause(model, where);
+<<<<<<< HEAD
 <<<<<<< HEAD
 					let query = db.selectFrom(model);
 =======
@@ -597,12 +692,41 @@ export const kyselyAdapter = (
 
 					// Apply where conditions
 >>>>>>> 2e6d72b0b (update: kysely working)
+=======
+					let query: any = db.selectFrom(model);
+
+					// Apply where conditions
+>>>>>>> 2cdd8c879 (update: progress)
 					if (and) {
-						query = query.where((eb) => eb.and(and.map((expr) => expr(eb))));
+						query = query.where((eb: any) =>
+							eb.and(and.map((expr: any) => expr(eb))),
+						);
 					}
 					if (or) {
-						query = query.where((eb) => eb.or(or.map((expr) => expr(eb))));
+						query = query.where((eb: any) =>
+							eb.or(or.map((expr: any) => expr(eb))),
+						);
 					}
+
+					if (join) {
+						// Add joins
+						for (const [joinModel, joinAttr] of Object.entries(join)) {
+							if (joinAttr.type === "inner") {
+								query = query.innerJoin(
+									joinModel,
+									`${joinModel}.${joinAttr.on.to}`,
+									`${model}.${joinAttr.on.from}`,
+								);
+							} else {
+								query = query.leftJoin(
+									joinModel,
+									`${joinModel}.${joinAttr.on.to}`,
+									`${model}.${joinAttr.on.from}`,
+								);
+							}
+						}
+					}
+
 					if (config?.type === "mssql") {
 						if (!offset) {
 							query = query.top(limit || 100);
@@ -610,12 +734,14 @@ export const kyselyAdapter = (
 					} else {
 						query = query.limit(limit || 100);
 					}
+
 					if (sortBy) {
 						query = query.orderBy(
 							getFieldName({ model, field: sortBy.field }),
 							sortBy.direction,
 						);
 					}
+
 					if (offset) {
 						if (config?.type === "mssql") {
 							if (!sortBy) {
@@ -627,6 +753,7 @@ export const kyselyAdapter = (
 						}
 					}
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 					const res = await query.selectAll().execute();
@@ -676,12 +803,16 @@ export const kyselyAdapter = (
 						}
 						query = query.select(allSelects);
 					}
+=======
+					query = query.selectAll();
+>>>>>>> 2cdd8c879 (update: progress)
 
 					const res = await query.execute();
 					if (!res) return [];
 
 					if (join) {
 						// Process results and restructure them
+<<<<<<< HEAD
 						const processedRows = processJoinedResults(
 							res,
 							model,
@@ -696,6 +827,48 @@ export const kyselyAdapter = (
 >>>>>>> 768a04162 (update: fix kysely join bug, exported some db name helpers, improve join tests and fixed kysely generation bug)
 					if (!res) return [];
 					return transformValueFromDB(res) as any;
+=======
+						const results = [];
+
+						for (const row of res) {
+							const result: Record<string, any> = {};
+
+							// Initialize objects for each model
+							result[model] = {};
+							for (const [joinModel] of Object.entries(join)) {
+								result[joinModel] = {};
+							}
+
+							// Distribute columns
+							for (const [key, value] of Object.entries(row)) {
+								const keyStr = String(key).toLowerCase();
+								let assigned = false;
+
+								// Check if key is prefixed with a joined model name
+								for (const [joinModel] of Object.entries(join)) {
+									const prefix = `${joinModel}_`.toLowerCase();
+									if (keyStr.startsWith(prefix)) {
+										const colName = String(key).substring(joinModel.length + 1);
+										result[joinModel]![colName] = value;
+										assigned = true;
+										break;
+									}
+								}
+
+								// If not a prefixed column, assign to main model
+								if (!assigned) {
+									result[model]![key] = value;
+								}
+							}
+
+							results.push(result);
+						}
+
+						return results;
+					}
+
+					return res as any;
+>>>>>>> 2cdd8c879 (update: progress)
 				},
 				async update({ model, where, update: values }) {
 					const { and, or } = convertWhereClause(model, where);

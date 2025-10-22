@@ -47,6 +47,7 @@ export const createAdapterFactory =
 				.toString(36)
 				.substring(2, 15);
 
+<<<<<<< HEAD
 			const config = {
 				...cfg,
 				supportsBooleans: cfg.supportsBooleans ?? true,
@@ -58,6 +59,20 @@ export const createAdapterFactory =
 				disableTransformInput: cfg.disableTransformInput ?? false,
 				disableTransformOutput: cfg.disableTransformOutput ?? false,
 			} satisfies AdapterFactoryConfig;
+=======
+		const config = {
+			...cfg,
+			supportsBooleans: cfg.supportsBooleans ?? true,
+			supportsDates: cfg.supportsDates ?? true,
+			supportsJSON: cfg.supportsJSON ?? false,
+			adapterName: cfg.adapterName ?? cfg.adapterId,
+			supportsNumericIds: cfg.supportsNumericIds ?? true,
+			transaction: cfg.transaction ?? false,
+			disableTransformInput: cfg.disableTransformInput ?? false,
+			disableTransformOutput: cfg.disableTransformOutput ?? false,
+			disableTransformJoin: cfg.disableTransformJoin ?? false,
+		} satisfies AdapterFactoryConfig;
+>>>>>>> 2cdd8c879 (update: progress)
 
 			if (
 				options.advanced?.database?.useNumberId === true &&
@@ -235,6 +250,7 @@ export const createAdapterFactory =
 					const value = data[field];
 					const fieldAttributes = fields[field];
 
+<<<<<<< HEAD
 					let newFieldName: string =
 						newMappedKeys[field] || fields[field]!.fieldName || field;
 					if (
@@ -244,6 +260,39 @@ export const createAdapterFactory =
 							!(action === "update" && fieldAttributes!.onUpdate)) ||
 							(action === "update" && !fieldAttributes!.onUpdate))
 					) {
+=======
+				if (newValue !== undefined) {
+					transformedData[newFieldName] = newValue;
+				}
+			}
+			return transformedData;
+		};
+
+		const transformOutput = async (
+			data: Record<string, any> | null,
+			unsafe_model: string,
+			select: string[] = [],
+			join: ResolvedJoin | undefined = undefined,
+			isSingle: boolean = false,
+		) => {
+			const transformSingleOutput = async (
+				data: Record<string, any> | null,
+				unsafe_model: string,
+				select: string[] = [],
+			) => {
+				if (!data) return null;
+				const newMappedKeys = config.mapKeysTransformOutput ?? {};
+				const transformedData: Record<string, any> = {};
+				const tableSchema = schema[unsafe_model]!.fields;
+				const idKey = Object.entries(newMappedKeys).find(
+					([_, v]) => v === "id",
+				)?.[0];
+				tableSchema[idKey ?? "id"] = {
+					type: options.advanced?.database?.useNumberId ? "number" : "string",
+				};
+				for (const key in tableSchema) {
+					if (select.length && !select.includes(key)) {
+>>>>>>> 2cdd8c879 (update: progress)
 						continue;
 					}
 					// If the value is undefined, but the fieldAttr provides a `defaultValue`, then we'll use that.
@@ -309,6 +358,7 @@ export const createAdapterFactory =
 				join: ResolvedJoin | undefined = undefined,
 			) => {
 
+<<<<<<< HEAD
 				const transformSingleOutput = async (
 					data: Record<string, any> | null,
 					unsafe_model: string,
@@ -342,6 +392,73 @@ export const createAdapterFactory =
 							if (field.transform?.output) {
 								newValue = await field.transform.output(newValue);
 							}
+=======
+			let transformedData: Record<string, any> = {};
+			unsafe_model = getDefaultModelName(unsafe_model);
+			const requiredModels = [unsafe_model, ...Object.keys(join)].map(
+				(model) => ({
+					modelName: getModelName(model),
+					defaultModelName: getDefaultModelName(model),
+				}),
+			);
+
+			if (!data) return null;
+			// Data is now the base model object directly (not wrapped under a key)
+			const baseModel: Record<string, any> = data;
+			for (const { modelName, defaultModelName } of requiredModels) {
+				if (defaultModelName === unsafe_model) {
+					// base model should be represent the entire record, and any joined models should be nested under it.
+					transformedData = await transformSingleOutput(
+						baseModel,
+						modelName,
+						select,
+					);
+				} else {
+					// joined models should be nested under the base model.
+					let joinedData = baseModel[modelName];
+
+					// Check if the foreign key field in the joined model has a unique constraint
+					// If unique, unwrap array to single object; otherwise keep as array
+					const joinedModelSchema = schema[defaultModelName]!.fields;
+					const foreignKeyField = Object.entries(joinedModelSchema).find(
+						([_, fieldAttributes]) =>
+							fieldAttributes.references?.model === unsafe_model,
+					)?.[0];
+
+					const isUnique = foreignKeyField
+						? joinedModelSchema[
+								getDefaultFieldName({
+									field: foreignKeyField,
+									model: defaultModelName,
+								})
+							]?.unique === true
+						: false;
+
+					if (isUnique && !Array.isArray(joinedData)) {
+						joinedData = [joinedData];
+					}
+
+					let td = [];
+
+					if (!Array.isArray(joinedData)) {
+						throw new BetterAuthError(
+							`Joined data for model ${defaultModelName} is not an array`,
+						);
+					}
+
+					for (const item of joinedData) {
+						td.push(await transformSingleOutput(item, modelName, select));
+					}
+
+					// If unique, return single object; otherwise return array
+					if (isUnique) {
+						transformedData[defaultModelName] = td.length > 0 ? td[0] : null;
+					} else {
+						transformedData[defaultModelName] = td;
+					}
+				}
+			}
+>>>>>>> 2cdd8c879 (update: progress)
 
 							let newFieldName: string = newMappedKeys[key] || key;
 
@@ -585,6 +702,7 @@ export const createAdapterFactory =
 						);
 					}
 
+<<<<<<< HEAD
 					let from: string;
 					let to: string;
 
@@ -594,6 +712,63 @@ export const createAdapterFactory =
 							model: baseModel,
 							field: foreignKeyAttributes.references.field,
 						});
+=======
+		const transformJoinClause = (
+			baseModel: string,
+			unsanitizedJoin: Join | undefined,
+		): ResolvedJoin | undefined => {
+			if (!unsanitizedJoin) return undefined;
+			const transformedJoin: ResolvedJoin = {};
+			for (const [model, join] of Object.entries(unsanitizedJoin)) {
+				if (join !== true) continue; // for now only support "true" on joins, indicating a simple join
+				const defaultModelName = getDefaultModelName(model);
+				const foreignKeys = Object.entries(
+					schema[defaultModelName]!.fields,
+				).filter(
+					([field, fieldAttributes]) =>
+						fieldAttributes.references?.model === baseModel,
+				);
+
+				if (!foreignKeys.length) {
+					throw new BetterAuthError(
+						`No foreign key found for model ${model} and base model ${baseModel} while performing join operation.`,
+					);
+				} else if (foreignKeys.length > 1) {
+					throw new BetterAuthError(
+						`Multiple foreign keys found for model ${model} and base model ${baseModel} while performing join operation. Only one foreign key is supported.`,
+					);
+				}
+
+				const [foreignKey, foreignKeyAttributes] = foreignKeys[0]!;
+				if (!foreignKeyAttributes.references) {
+					// this should never happen, as we filter for references in the foreign keys.
+					// it's here for typescript to be happy.
+					throw new BetterAuthError(
+						`No references found for foreign key ${foreignKey} on model ${model} while performing join operation.`,
+					);
+				}
+
+				const from = getFieldName({
+					model: baseModel,
+					field: foreignKeyAttributes.references.field,
+				});
+
+				const to = getFieldName({
+					model,
+					field: foreignKey,
+				});
+
+				transformedJoin[getModelName(model)] = {
+					on: {
+						from,
+						to,
+					},
+					type: "inner", // for now only support inner joins
+				};
+			}
+			return transformedJoin;
+		};
+>>>>>>> 2cdd8c879 (update: progress)
 
 						to = getFieldName({
 							model,
@@ -668,6 +843,7 @@ export const createAdapterFactory =
 				create: async <T extends Record<string, any>, R = T>({
 					data: unsafeData,
 					model: unsafeModel,
+<<<<<<< HEAD
 					select,
 					forceAllowId = false,
 				}: {
@@ -714,6 +890,121 @@ export const createAdapterFactory =
 						`${formatTransactionId(thisTransactionId)} ${formatStep(2, 4)}`,
 						`${formatMethod("create")} ${formatAction("Parsed Input")}:`,
 						{ model, data },
+=======
+					where: unsafeWhere,
+				});
+				unsafeModel = getDefaultModelName(unsafeModel);
+				let join: ResolvedJoin | undefined;
+				if (!config.disableTransformJoin) {
+					join = transformJoinClause(unsafeModel, unsafeJoin);
+				} else {
+					// assume it's already transformed if transformation is disabled
+					join = unsafeJoin as never as ResolvedJoin;
+				}
+				debugLog(
+					{ method: "findOne" },
+					`${formatTransactionId(thisTransactionId)} ${formatStep(1, 3)}`,
+					`${formatMethod("findOne")}:`,
+					{ model, where, select, join },
+				);
+				const res = await adapterInstance.findOne<T>({
+					model,
+					where,
+					select,
+					join,
+				});
+				debugLog(
+					{ method: "findOne" },
+					`${formatTransactionId(thisTransactionId)} ${formatStep(2, 3)}`,
+					`${formatMethod("findOne")} ${formatAction("DB Result")}:`,
+					{ model, data: res },
+				);
+				let transformed = res as any;
+				if (!config.disableTransformOutput) {
+					transformed = await transformOutput(
+						res as any,
+						unsafeModel,
+						select,
+						join,
+						true,
+					);
+				}
+				debugLog(
+					{ method: "findOne" },
+					`${formatTransactionId(thisTransactionId)} ${formatStep(3, 3)}`,
+					`${formatMethod("findOne")} ${formatAction("Parsed Result")}:`,
+					{ model, data: transformed },
+				);
+				return transformed;
+			},
+			findMany: async <T extends Record<string, any>>({
+				model: unsafeModel,
+				where: unsafeWhere,
+				limit: unsafeLimit,
+				sortBy,
+				offset,
+				join: unsafeJoin,
+			}: {
+				model: string;
+				where?: Where[];
+				limit?: number;
+				sortBy?: { field: string; direction: "asc" | "desc" };
+				offset?: number;
+				join?: Join;
+			}) => {
+				transactionId++;
+				let thisTransactionId = transactionId;
+				const limit =
+					unsafeLimit ??
+					options.advanced?.database?.defaultFindManyLimit ??
+					100;
+				const model = getModelName(unsafeModel);
+				const where = transformWhereClause({
+					model: unsafeModel,
+					where: unsafeWhere,
+				});
+				unsafeModel = getDefaultModelName(unsafeModel);
+				let join: ResolvedJoin | undefined;
+				if (!config.disableTransformJoin) {
+					join = transformJoinClause(unsafeModel, unsafeJoin);
+				} else {
+					// assume it's already transformed if transformation is disabled
+					join = unsafeJoin as never as ResolvedJoin;
+				}
+				debugLog(
+					{ method: "findMany" },
+					`${formatTransactionId(thisTransactionId)} ${formatStep(1, 3)}`,
+					`${formatMethod("findMany")}:`,
+					{ model, where, limit, sortBy, offset, join },
+				);
+				const res = await adapterInstance.findMany<T>({
+					model,
+					where,
+					limit: limit,
+					sortBy,
+					offset,
+					join,
+				});
+				debugLog(
+					{ method: "findMany" },
+					`${formatTransactionId(thisTransactionId)} ${formatStep(2, 3)}`,
+					`${formatMethod("findMany")} ${formatAction("DB Result")}:`,
+					{ model, data: res },
+				);
+				let transformed = res as any;
+				if (!config.disableTransformOutput) {
+					transformed = await Promise.all(
+						res.map(
+							async (r) =>
+								await transformOutput(
+									r as any,
+									unsafeModel,
+									undefined,
+									join,
+									false,
+								),
+						),
+>>>>>>> 2cdd8c879 (update: progress)
 					);
 					const res = await adapterInstance.create<T>({ data, model });
 					debugLog(

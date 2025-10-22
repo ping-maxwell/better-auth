@@ -177,6 +177,24 @@ export const getNormalTestSuiteTests = ({
 			type ExpectedResult = User & { session: Session[]; account: Account[] };
 
 			const result = await adapter.findOne<ExpectedResult>({
+<<<<<<< HEAD
+				model: "user",
+				where: [{ field: "id", value: users[0]!.id }],
+				join: {
+					session: true,
+					account: true,
+				},
+			});
+			expect({
+				...result,
+				session: result?.session.sort((a, b) => a.id.localeCompare(b.id)),
+				account: result?.account.sort((a, b) => a.id.localeCompare(b.id)),
+			}).toEqual({
+				...users[0]!,
+				session: sessions.sort((a, b) => a.id.localeCompare(b.id)),
+				account: accounts.sort((a, b) => a.id.localeCompare(b.id)),
+			});
+=======
 				model: "user",
 				where: [{ field: "id", value: users[0]!.id }],
 				join: {
@@ -194,6 +212,156 @@ export const getNormalTestSuiteTests = ({
 				account: accounts.sort((a, b) => a.id.localeCompare(b.id)),
 			});
 		},
+		"findOne - should return an object for one-to-one joins": async () => {
+			await modifyBetterAuthOptions(
+				{
+					plugins: [
+						{
+							id: "one-to-one-test",
+							schema: {
+								oneToOneTable: {
+									fields: {
+										oneToOne: {
+											type: "string",
+											required: true,
+											references: { field: "id", model: "user" },
+											unique: true,
+										},
+									},
+								},
+							},
+						} satisfies BetterAuthPlugin,
+					],
+				},
+				true,
+			);
+			type OneToOneTable = { oneToOne: string };
+			const users = (await insertRandom("user", 2)).map((x) => x[0]);
+			const oneToOne = await adapter.create<OneToOneTable>({
+				model: "oneToOneTable",
+				data: {
+					oneToOne: users[0]!.id,
+				},
+			});
+			// decoy second table that shouldn't be included in the result
+			await adapter.create<OneToOneTable>({
+				model: "oneToOneTable",
+				data: {
+					oneToOne: users[1]!.id,
+				},
+			});
+			const result = await adapter.findOne<
+				User & { oneToOneTable: OneToOneTable }
+			>({
+				model: "user",
+				where: [{ field: "id", value: users[0]!.id }],
+				join: { oneToOneTable: true },
+			});
+			expect(result).toEqual({
+				...users[0]!,
+				oneToOneTable: oneToOne,
+			});
+		},
+		"findOne - should return an array for one-to-many joins": async () => {
+			const user = await adapter.create<User>({
+				model: "user",
+				data: { ...(await generate("user")) },
+				forceAllowId: true,
+			});
+			const session = await adapter.create<Session>({
+				model: "session",
+				data: { ...(await generate("session")), userId: user.id },
+				forceAllowId: true,
+			});
+			const result = await adapter.findOne<User & { session: Session }>({
+				model: "user",
+				where: [{ field: "id", value: user.id }],
+				join: { session: true },
+			});
+			expect(result).toEqual({
+				...user,
+				session: [session],
+			});
+>>>>>>> 2cdd8c879 (update: progress)
+		},
+		"findOne - should work with both one-to-one and one-to-many joins":
+			async () => {
+				await modifyBetterAuthOptions(
+					{
+						plugins: [
+							{
+								id: "one-to-one-test",
+								schema: {
+									oneToOneTable: {
+										fields: {
+											oneToOne: {
+												type: "string",
+												required: true,
+												references: { field: "id", model: "user" },
+												unique: true,
+											},
+										},
+									},
+								},
+							} satisfies BetterAuthPlugin,
+						],
+					},
+					true,
+				);
+				type OneToOneTable = { oneToOne: string };
+				const users = (await insertRandom("user", 2)).map((x) => x[0]);
+				const oneToOne = await adapter.create<OneToOneTable>({
+					model: "oneToOneTable",
+					data: {
+						oneToOne: users[0]!.id,
+					},
+				});
+				const session1 = await adapter.create<Session>({
+					model: "session",
+					data: {
+						...(await generate("session")),
+						userId: users[0]!.id,
+						createdAt: new Date(Date.now() - 3000),
+					},
+					forceAllowId: true,
+				});
+				const session2 = await adapter.create<Session>({
+					model: "session",
+					data: {
+						...(await generate("session")),
+						userId: users[0]!.id,
+						createdAt: new Date(Date.now() - 1000),
+					},
+					forceAllowId: true,
+				});
+				let result = await adapter.findOne<
+					User & { oneToOneTable: OneToOneTable; session: Session[] }
+				>({
+					model: "user",
+					where: [{ field: "id", value: users[0]!.id }],
+					join: { oneToOneTable: true, session: true },
+				});
+				if (result?.session?.length) {
+					result.session = result.session.sort(
+						(a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+					);
+				}
+
+				expect(result).toEqual({
+					...users[0]!,
+					oneToOneTable: oneToOne,
+					session: [session1, session2],
+				});
+			},
+		"findOne - should return null for failed base model lookup that has joins":
+			async () => {
+				const result = await adapter.findOne<User>({
+					model: "user",
+					where: [{ field: "id", value: "100000" }],
+					join: { session: true, account: true },
+				});
+				expect(result).toBeNull();
+			},
 		"findOne - should find a model with modified field name": async () => {
 			await modifyBetterAuthOptions(
 				{

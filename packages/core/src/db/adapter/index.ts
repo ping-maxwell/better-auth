@@ -264,6 +264,12 @@ export interface DBAdapterFactoryConfig<
 	 * @default false
 	 */
 	disableTransformInput?: boolean;
+	/**
+	 * Whether to disable the transform join.
+	 * Do not use this option unless you know what you are doing.
+	 * @default false
+	 */
+	disableTransformJoin?: boolean;
 }
 
 export type Where = {
@@ -290,6 +296,54 @@ export type Where = {
 	connector?: "AND" | "OR";
 };
 
+<<<<<<< HEAD
+=======
+/**
+ * Join configuration for relational queries.
+ *
+ * Allows you to join related tables/models in a single query operation.
+ * Each key represents the name of the joined table/model, and the value
+ * configures how the join should be performed.
+ */
+export type Join = {
+	[model: string]: boolean;
+	//  {
+
+	// 	// In the future we may support nested joins:
+	// 	// with?: Join;
+	// };
+};
+
+/**
+ * Once `Join` has gone through the adapter factory, it will be transformed into a `ResolvedJoin`.
+ */
+export type ResolvedJoin = {
+	[model: string]: {
+		/**
+		 * The Join type that will be performed
+		 *
+		 * * **left**: returns all rows from the left table, plus matching rows from the right (if none, NULL fills in).
+		 * * **inner**: returns rows where there’s a match in both tables.
+		 * * Not supported yet: ~~**right**: returns all rows from the right table, plus matching rows from the left (if none, NULL fills in).~~
+		 * * Not supported yet: ~~**full**: returns rows from both sides, filling in gaps with NULLs.~~
+		 *
+		 * @default "inner"
+		 */
+		type?: "left" | "inner";
+		on: {
+			/**
+			 * Column name from the main table
+			 */
+			from: string;
+			/**
+			 * Column name from the joined table
+			 */
+			to: string;
+		};
+	};
+};
+
+>>>>>>> 2cdd8c879 (update: progress)
 export type DBTransactionAdapter<
 	Options extends BetterAuthOptions = BetterAuthOptions,
 > = Omit<DBAdapter<Options>, "transaction">;
@@ -390,6 +444,10 @@ export interface CustomAdapter {
 		model: string;
 		where: CleanedWhere[];
 		select?: string[];
+<<<<<<< HEAD
+=======
+		join?: ResolvedJoin;
+>>>>>>> 2cdd8c879 (update: progress)
 	}) => Promise<T | null>;
 	findMany: <T>({
 		model,
@@ -403,6 +461,10 @@ export interface CustomAdapter {
 		limit: number;
 		sortBy?: { field: string; direction: "asc" | "desc" };
 		offset?: number;
+<<<<<<< HEAD
+=======
+		join?: ResolvedJoin;
+>>>>>>> 2cdd8c879 (update: progress)
 	}) => Promise<T[]>;
 	delete: ({
 		model,
