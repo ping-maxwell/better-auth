@@ -282,6 +282,7 @@ export const kyselyAdapter = (
 						let assigned = false;
 
 						// Check if this is a joined column
+<<<<<<< HEAD
 						for (const { joinModel, fieldName } of allSelectsStr) {
 							if (keyStr === `_joined_${joinModel}_${fieldName}`) {
 								joinedModelFields[getModelName(joinModel)]![
@@ -290,6 +291,19 @@ export const kyselyAdapter = (
 										field: fieldName,
 									})
 								] = value;
+=======
+						for (const selectStr of allSelectsStr) {
+							if (keyStr === selectStr) {
+								// Extract joinModel and fieldName from the key
+								// Format: joined_<joinModel>_<fieldName>
+								const parts = keyStr.substring(8).split("_"); // Remove "_joined_" prefix
+								const joinModel = parts[0]!;
+								const fieldName = parts.slice(1).join("_");
+
+								if (joinedModelFields[joinModel]) {
+									joinedModelFields[joinModel][fieldName] = value;
+								}
+>>>>>>> 12fb44e30 (update: make kysely joins start with underscore)
 								assigned = true;
 								break;
 							}
@@ -409,6 +423,12 @@ export const kyselyAdapter = (
 							for (const [field, fieldAttr] of Object.entries(fields)) {
 								allSelects.push(
 									sql`${sql.ref(joinModel)}.${sql.ref(fieldAttr.fieldName || field)} as ${sql.ref(`_joined_${joinModel}_${fieldAttr.fieldName || field}`)}`,
+<<<<<<< HEAD
+=======
+								);
+								allSelectsStr.push(
+									`_joined_${joinModel}_${fieldAttr.fieldName || field}`,
+>>>>>>> 12fb44e30 (update: make kysely joins start with underscore)
 								);
 								allSelectsStr.push({
 									joinModel,
@@ -498,6 +518,12 @@ export const kyselyAdapter = (
 							for (const [field, fieldAttr] of Object.entries(fields)) {
 								allSelects.push(
 									sql`${sql.ref(joinModel)}.${sql.ref(fieldAttr.fieldName || field)} as ${sql.ref(`_joined_${joinModel}_${fieldAttr.fieldName || field}`)}`,
+<<<<<<< HEAD
+=======
+								);
+								allSelectsStr.push(
+									`_joined_${joinModel}_${fieldAttr.fieldName || field}`,
+>>>>>>> 12fb44e30 (update: make kysely joins start with underscore)
 								);
 								allSelectsStr.push({
 									joinModel,
