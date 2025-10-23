@@ -159,9 +159,29 @@ export const prismaAdapter = (prisma: PrismaClient, config: PrismaConfig) => {
 							`Model ${model} does not exist in the database. If you haven't generated the Prisma client, you need to run 'npx prisma generate'`,
 						);
 					}
+<<<<<<< HEAD
 					return await db[model]!.findFirst({
 						where: whereClause,
 						select: convertSelect(select, model),
+=======
+
+					// transform join keys to use Prisma expected field names
+					let include: Record<string, boolean> | undefined = undefined;
+					let map = new Map<string, string>();
+					if (join) {
+						include = {};
+						for (const [model, value] of Object.entries(join)) {
+							const key = `${model.toLowerCase()}s`;
+							include[key] = value;
+							map.set(key, model);
+						}
+					}
+
+					let result = await db[model]!.findFirst({
+						where: whereClause,
+						select: include ? undefined : convertSelect(select, model), // Can't use `include` and `select` together
+						include,
+>>>>>>> f74911dce (update: support mongo)
 					});
 				},
 				async findMany({ model, where, limit, offset, sortBy }) {
@@ -172,7 +192,23 @@ export const prismaAdapter = (prisma: PrismaClient, config: PrismaConfig) => {
 						);
 					}
 
+<<<<<<< HEAD
 					return (await db[model]!.findMany({
+=======
+					// transform join keys to use Prisma expected field names
+					let include: Record<string, boolean> | undefined = undefined;
+					let map = new Map<string, string>();
+					if (join) {
+						include = {};
+						for (const [model, value] of Object.entries(join)) {
+							const key = `${model.toLowerCase()}s`;
+							include[key] = value;
+							map.set(key, model);
+						}
+					}
+
+					const result = await db[model]!.findMany({
+>>>>>>> f74911dce (update: support mongo)
 						where: whereClause,
 						take: limit || 100,
 						skip: offset || 0,
