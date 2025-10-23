@@ -6,8 +6,10 @@ import {
 import type { BetterAuthOptions } from "@better-auth/core";
 import type { KyselyDatabaseType } from "./types";
 import {
+	sql,
 	type InsertQueryBuilder,
 	type Kysely,
+	type RawBuilder,
 	type UpdateQueryBuilder,
 } from "kysely";
 import type {
@@ -53,17 +55,24 @@ export const kyselyAdapter = (
 		db: Kysely<any>,
 	): AdapterFactoryCustomizeAdapterCreator => {
 <<<<<<< HEAD
+<<<<<<< HEAD
 		return ({ getFieldName, schema, getDefaultModelName }) => {
 =======
+=======
+>>>>>>> 2e6d72b0b (update: kysely working)
 		return ({
 			getFieldName,
 			schema,
 			getDefaultFieldName,
 			getDefaultModelName,
+<<<<<<< HEAD
 			getFieldAttributes,
 			getModelName,
 		}) => {
 >>>>>>> 768a04162 (update: fix kysely join bug, exported some db name helpers, improve join tests and fixed kysely generation bug)
+=======
+		}) => {
+>>>>>>> 2e6d72b0b (update: kysely working)
 			const withReturning = async (
 				values: Record<string, any>,
 				builder:
@@ -250,14 +259,22 @@ export const kyselyAdapter = (
 				};
 			}
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 2e6d72b0b (update: kysely working)
 
 			// Helper function to process joined results
 			function processJoinedResults(
 				rows: any[],
 				baseModel: string,
+<<<<<<< HEAD
 				joinConfig: ResolvedJoin | undefined,
 				allSelectsStr: { joinModel: string; fieldName: string }[],
+=======
+				joinConfig: Record<string, any> | undefined,
+				allSelectsStr: string[],
+>>>>>>> 2e6d72b0b (update: kysely working)
 			) {
 				if (!joinConfig || !rows.length) {
 					return rows;
@@ -273,7 +290,11 @@ export const kyselyAdapter = (
 
 					// Initialize joined model fields map
 					for (const [joinModel] of Object.entries(joinConfig)) {
+<<<<<<< HEAD
 						joinedModelFields[getModelName(joinModel)] = {};
+=======
+						joinedModelFields[joinModel] = {};
+>>>>>>> 2e6d72b0b (update: kysely working)
 					}
 
 					// Distribute all columns - collect complete objects per model
@@ -282,6 +303,7 @@ export const kyselyAdapter = (
 						let assigned = false;
 
 						// Check if this is a joined column
+<<<<<<< HEAD
 <<<<<<< HEAD
 						for (const { joinModel, fieldName } of allSelectsStr) {
 							if (keyStr === `_joined_${joinModel}_${fieldName}`) {
@@ -292,18 +314,27 @@ export const kyselyAdapter = (
 									})
 								] = value;
 =======
+=======
+>>>>>>> 2e6d72b0b (update: kysely working)
 						for (const selectStr of allSelectsStr) {
 							if (keyStr === selectStr) {
 								// Extract joinModel and fieldName from the key
 								// Format: joined_<joinModel>_<fieldName>
+<<<<<<< HEAD
 								const parts = keyStr.substring(8).split("_"); // Remove "_joined_" prefix
+=======
+								const parts = keyStr.substring(7).split("_"); // Remove "joined_" prefix
+>>>>>>> 2e6d72b0b (update: kysely working)
 								const joinModel = parts[0]!;
 								const fieldName = parts.slice(1).join("_");
 
 								if (joinedModelFields[joinModel]) {
 									joinedModelFields[joinModel][fieldName] = value;
 								}
+<<<<<<< HEAD
 >>>>>>> 12fb44e30 (update: make kysely joins start with underscore)
+=======
+>>>>>>> 2e6d72b0b (update: kysely working)
 								assigned = true;
 								break;
 							}
@@ -326,12 +357,18 @@ export const kyselyAdapter = (
 							const defaultModelName = getDefaultModelName(joinModel);
 							const fields = schema[defaultModelName]?.fields;
 							if (!fields) continue;
+<<<<<<< HEAD
 							const joinFieldAttr = getFieldAttributes({
 								model: defaultModelName,
 								field: joinAttr.on.to,
 							});
 							const isUnique = joinFieldAttr?.unique ?? false;
 							entry[getModelName(joinModel)] = isUnique ? null : [];
+=======
+							const joinFieldAttr = fields[joinAttr.on.to];
+							const isUnique = joinFieldAttr?.unique ?? false;
+							entry[defaultModelName] = isUnique ? null : [];
+>>>>>>> 2e6d72b0b (update: kysely working)
 						}
 
 						groupedByMainId.set(mainId, entry);
@@ -342,6 +379,7 @@ export const kyselyAdapter = (
 					// Add joined records to the entry
 					for (const [joinModel, joinAttr] of Object.entries(joinConfig)) {
 						const defaultModelName = getDefaultModelName(joinModel);
+<<<<<<< HEAD
 						const joinFieldAttr = getFieldAttributes({
 							model: defaultModelName,
 							field: joinAttr.on.to,
@@ -363,6 +401,25 @@ export const kyselyAdapter = (
 									)
 								) {
 									entry[getModelName(defaultModelName)].push(joinedObj);
+=======
+						const fields = schema[defaultModelName]?.fields;
+						const joinFieldAttr = fields?.[joinAttr.on.to];
+						const isUnique = joinFieldAttr?.unique ?? false;
+
+						const joinedObj = joinedModelFields[joinModel];
+
+						if (isUnique) {
+							entry[defaultModelName] = joinedObj;
+						} else {
+							// For arrays, append if not already there (deduplicate by id)
+							if (Array.isArray(entry[defaultModelName]) && joinedObj?.id) {
+								if (
+									!entry[defaultModelName].some(
+										(item: any) => item.id === joinedObj.id,
+									)
+								) {
+									entry[defaultModelName].push(joinedObj);
+>>>>>>> 2e6d72b0b (update: kysely working)
 								}
 							}
 						}
@@ -371,7 +428,10 @@ export const kyselyAdapter = (
 
 				return Array.from(groupedByMainId.values());
 			}
+<<<<<<< HEAD
 >>>>>>> 768a04162 (update: fix kysely join bug, exported some db name helpers, improve join tests and fixed kysely generation bug)
+=======
+>>>>>>> 2e6d72b0b (update: kysely working)
 			return {
 				async create({ data, model }) {
 					const builder = db.insertInto(model).values(data);
@@ -380,7 +440,13 @@ export const kyselyAdapter = (
 				},
 				async findOne({ model, where, select }) {
 					const { and, or } = convertWhereClause(model, where);
+<<<<<<< HEAD
 					let query = db.selectFrom(model).selectAll();
+=======
+					let query: any = db.selectFrom(model).selectAll(model);
+
+					// Apply where conditions first
+>>>>>>> 2e6d72b0b (update: kysely working)
 					if (and) {
 						query = query.where((eb) => eb.and(and.map((expr) => expr(eb))));
 					}
@@ -414,6 +480,7 @@ export const kyselyAdapter = (
 
 					// Use selectAll which will handle column naming appropriately
 					const allSelects: RawBuilder<unknown>[] = [];
+<<<<<<< HEAD
 					const allSelectsStr: { joinModel: string; fieldName: string }[] = [];
 					if (join) {
 						for (const [joinModel, _] of Object.entries(join)) {
@@ -470,10 +537,66 @@ export const kyselyAdapter = (
 
 					return row as any;
 >>>>>>> 768a04162 (update: fix kysely join bug, exported some db name helpers, improve join tests and fixed kysely generation bug)
+=======
+					const allSelectsStr: string[] = [];
+					if (join) {
+						for (const [joinModel, _] of Object.entries(join)) {
+							const fields = schema[getDefaultModelName(joinModel)]?.fields;
+							if (!fields) continue;
+							fields.id = { type: "string" }; // make sure there is at least an id field
+							for (const [field, fieldAttr] of Object.entries(fields)) {
+								allSelects.push(
+									sql`${sql.ref(joinModel)}.${sql.ref(fieldAttr.fieldName || field)} as ${sql.ref(`joined_${joinModel}_${fieldAttr.fieldName || field}`)}`,
+								);
+								allSelectsStr.push(
+									`joined_${joinModel}_${fieldAttr.fieldName || field}`,
+								);
+							}
+						}
+						query = query.select(allSelects);
+					}
+
+					const res = await query.execute();
+					if (!res || !Array.isArray(res) || res.length === 0) return null;
+
+					// Get the first row from the result array
+					const row = res[0];
+
+					if (join) {
+						const result: Record<string, any> = {};
+
+						// Initialize structure for joined models
+						for (const [joinModel, joinAttr] of Object.entries(join)) {
+							const fields = schema[getDefaultModelName(joinModel)]?.fields;
+							if (!fields) continue;
+							const joinFieldAttr = fields[joinAttr.on.to];
+							const isUnique = joinFieldAttr?.unique ?? false;
+							result[getDefaultModelName(joinModel)] = isUnique ? null : [];
+						}
+
+						// Process ALL rows and collect joined records
+						const processedRows = processJoinedResults(
+							res,
+							model,
+							join,
+							allSelectsStr,
+						);
+
+						return processedRows[0] as any;
+					}
+
+					return row as any;
+>>>>>>> 2e6d72b0b (update: kysely working)
 				},
 				async findMany({ model, where, limit, offset, sortBy }) {
 					const { and, or } = convertWhereClause(model, where);
+<<<<<<< HEAD
 					let query = db.selectFrom(model);
+=======
+					let query: any = db.selectFrom(model).selectAll(model);
+
+					// Apply where conditions
+>>>>>>> 2e6d72b0b (update: kysely working)
 					if (and) {
 						query = query.where((eb) => eb.and(and.map((expr) => expr(eb))));
 					}
@@ -505,6 +628,7 @@ export const kyselyAdapter = (
 					}
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 					const res = await query.selectAll().execute();
 =======
 					// Use selectAll which will handle column naming appropriately
@@ -532,6 +656,40 @@ export const kyselyAdapter = (
 							}
 						}
 						query = query.select(allSelects);
+=======
+					// Use selectAll which will handle column naming appropriately
+					const allSelects: RawBuilder<unknown>[] = [];
+					const allSelectsStr: string[] = [];
+					if (join) {
+						for (const [joinModel, _] of Object.entries(join)) {
+							const fields = schema[getDefaultModelName(joinModel)]?.fields;
+							if (!fields) continue;
+							fields.id = { type: "string" }; // make sure there is at least an id field
+							for (const [field, fieldAttr] of Object.entries(fields)) {
+								allSelects.push(
+									sql`${sql.ref(joinModel)}.${sql.ref(fieldAttr.fieldName || field)} as ${sql.ref(`joined_${joinModel}_${fieldAttr.fieldName || field}`)}`,
+								);
+								allSelectsStr.push(
+									`joined_${joinModel}_${fieldAttr.fieldName || field}`,
+								);
+							}
+						}
+						query = query.select(allSelects);
+					}
+
+					const res = await query.execute();
+					if (!res) return [];
+
+					if (join) {
+						// Process results and restructure them
+						const processedRows = processJoinedResults(
+							res,
+							model,
+							join,
+							allSelectsStr,
+						);
+						return processedRows;
+>>>>>>> 2e6d72b0b (update: kysely working)
 					}
 
 					const res = await query.execute();
