@@ -14,6 +14,7 @@ import type {
 	DBAdapterDebugLogOption,
 	DBAdapter,
 	Where,
+	ResolvedJoin,
 } from "@better-auth/core/db/adapter";
 
 interface KyselyAdapterConfig {
@@ -51,7 +52,18 @@ export const kyselyAdapter = (
 	const createCustomAdapter = (
 		db: Kysely<any>,
 	): AdapterFactoryCustomizeAdapterCreator => {
+<<<<<<< HEAD
 		return ({ getFieldName, schema, getDefaultModelName }) => {
+=======
+		return ({
+			getFieldName,
+			schema,
+			getDefaultFieldName,
+			getDefaultModelName,
+			getFieldAttributes,
+			getModelName,
+		}) => {
+>>>>>>> 768a04162 (update: fix kysely join bug, exported some db name helpers, improve join tests and fixed kysely generation bug)
 			const withReturning = async (
 				values: Record<string, any>,
 				builder:
@@ -237,6 +249,115 @@ export const kyselyAdapter = (
 					or: conditions.or.length ? conditions.or : null,
 				};
 			}
+<<<<<<< HEAD
+=======
+
+			// Helper function to process joined results
+			function processJoinedResults(
+				rows: any[],
+				baseModel: string,
+				joinConfig: ResolvedJoin | undefined,
+				allSelectsStr: { joinModel: string; fieldName: string }[],
+			) {
+				if (!joinConfig || !rows.length) {
+					return rows;
+				}
+
+				// Group rows by main model ID
+				const groupedByMainId = new Map<string, any>();
+
+				for (const currentRow of rows) {
+					// Separate main model columns from joined columns
+					const mainModelFields: Record<string, any> = {};
+					const joinedModelFields: Record<string, Record<string, any>> = {};
+
+					// Initialize joined model fields map
+					for (const [joinModel] of Object.entries(joinConfig)) {
+						joinedModelFields[getModelName(joinModel)] = {};
+					}
+
+					// Distribute all columns - collect complete objects per model
+					for (const [key, value] of Object.entries(currentRow)) {
+						const keyStr = String(key);
+						let assigned = false;
+
+						// Check if this is a joined column
+						for (const { joinModel, fieldName } of allSelectsStr) {
+							if (keyStr === `_joined_${joinModel}_${fieldName}`) {
+								joinedModelFields[getModelName(joinModel)]![
+									getFieldName({
+										model: joinModel,
+										field: fieldName,
+									})
+								] = value;
+								assigned = true;
+								break;
+							}
+						}
+
+						if (!assigned) {
+							mainModelFields[key] = value;
+						}
+					}
+
+					const mainId = mainModelFields.id;
+					if (!mainId) continue;
+
+					// Initialize or get existing entry for this main model
+					if (!groupedByMainId.has(mainId)) {
+						const entry: Record<string, any> = { ...mainModelFields };
+
+						// Initialize joined models based on uniqueness
+						for (const [joinModel, joinAttr] of Object.entries(joinConfig)) {
+							const defaultModelName = getDefaultModelName(joinModel);
+							const fields = schema[defaultModelName]?.fields;
+							if (!fields) continue;
+							const joinFieldAttr = getFieldAttributes({
+								model: defaultModelName,
+								field: joinAttr.on.to,
+							});
+							const isUnique = joinFieldAttr?.unique ?? false;
+							entry[getModelName(joinModel)] = isUnique ? null : [];
+						}
+
+						groupedByMainId.set(mainId, entry);
+					}
+
+					const entry = groupedByMainId.get(mainId)!;
+
+					// Add joined records to the entry
+					for (const [joinModel, joinAttr] of Object.entries(joinConfig)) {
+						const defaultModelName = getDefaultModelName(joinModel);
+						const joinFieldAttr = getFieldAttributes({
+							model: defaultModelName,
+							field: joinAttr.on.to,
+						});
+						const isUnique = joinFieldAttr?.unique ?? false;
+
+						const joinedObj = joinedModelFields[getModelName(joinModel)];
+						if (isUnique) {
+							entry[getModelName(joinModel)] = joinedObj;
+						} else {
+							// For arrays, append if not already there (deduplicate by id)
+							if (
+								Array.isArray(entry[getModelName(defaultModelName)]) &&
+								joinedObj?.id
+							) {
+								if (
+									!entry[getModelName(defaultModelName)].some(
+										(item: any) => item.id === joinedObj.id,
+									)
+								) {
+									entry[getModelName(defaultModelName)].push(joinedObj);
+								}
+							}
+						}
+					}
+				}
+
+				return Array.from(groupedByMainId.values());
+			}
+>>>>>>> 768a04162 (update: fix kysely join bug, exported some db name helpers, improve join tests and fixed kysely generation bug)
 			return {
 				async create({ data, model }) {
 					const builder = db.insertInto(model).values(data);
@@ -252,9 +373,83 @@ export const kyselyAdapter = (
 					if (or) {
 						query = query.where((eb) => eb.or(or.map((expr) => expr(eb))));
 					}
+<<<<<<< HEAD
 					const res = await query.executeTakeFirst();
 					if (!res) return null;
 					return transformValueFromDB(res) as any;
+=======
+
+					if (join) {
+						// Add joins
+						for (const [joinModel, joinAttr] of Object.entries(join)) {
+							if (joinAttr.type === "inner") {
+								query = query.innerJoin(
+									joinModel,
+									`${joinModel}.${joinAttr.on.to}`,
+									`${model}.${joinAttr.on.from}`,
+								);
+							} else {
+								query = query.leftJoin(
+									joinModel,
+									`${joinModel}.${joinAttr.on.to}`,
+									`${model}.${joinAttr.on.from}`,
+								);
+							}
+						}
+					}
+
+					// Use selectAll which will handle column naming appropriately
+					const allSelects: RawBuilder<unknown>[] = [];
+					const allSelectsStr: { joinModel: string; fieldName: string }[] = [];
+					if (join) {
+						for (const [joinModel, _] of Object.entries(join)) {
+							const fields = schema[getDefaultModelName(joinModel)]?.fields;
+							if (!fields) continue;
+							fields.id = { type: "string" }; // make sure there is at least an id field
+							for (const [field, fieldAttr] of Object.entries(fields)) {
+								allSelects.push(
+									sql`${sql.ref(joinModel)}.${sql.ref(fieldAttr.fieldName || field)} as ${sql.ref(`_joined_${joinModel}_${fieldAttr.fieldName || field}`)}`,
+								);
+								allSelectsStr.push({
+									joinModel,
+									fieldName: fieldAttr.fieldName || field,
+								});
+							}
+						}
+						query = query.select(allSelects);
+					}
+
+					const res = await query.execute();
+					if (!res || !Array.isArray(res) || res.length === 0) return null;
+
+					// Get the first row from the result array
+					const row = res[0];
+
+					if (join) {
+						const result: Record<string, any> = {};
+
+						// Initialize structure for joined models
+						for (const [joinModel, joinAttr] of Object.entries(join)) {
+							const fields = schema[getDefaultModelName(joinModel)]?.fields;
+							if (!fields) continue;
+							const joinFieldAttr = fields[joinAttr.on.to];
+							const isUnique = joinFieldAttr?.unique ?? false;
+							result[getDefaultModelName(joinModel)] = isUnique ? null : [];
+						}
+
+						// Process ALL rows and collect joined records
+						const processedRows = processJoinedResults(
+							res,
+							model,
+							join,
+							allSelectsStr,
+						);
+
+						return processedRows[0] as any;
+					}
+
+					return row as any;
+>>>>>>> 768a04162 (update: fix kysely join bug, exported some db name helpers, improve join tests and fixed kysely generation bug)
 				},
 				async findMany({ model, where, limit, offset, sortBy }) {
 					const { and, or } = convertWhereClause(model, where);
@@ -289,7 +484,32 @@ export const kyselyAdapter = (
 						}
 					}
 
+<<<<<<< HEAD
 					const res = await query.selectAll().execute();
+=======
+					// Use selectAll which will handle column naming appropriately
+					const allSelects: RawBuilder<unknown>[] = [];
+					const allSelectsStr: { joinModel: string; fieldName: string }[] = [];
+					if (join) {
+						for (const [joinModel, _] of Object.entries(join)) {
+							const fields = schema[getDefaultModelName(joinModel)]?.fields;
+							if (!fields) continue;
+							fields.id = { type: "string" }; // make sure there is at least an id field
+							for (const [field, fieldAttr] of Object.entries(fields)) {
+								allSelects.push(
+									sql`${sql.ref(joinModel)}.${sql.ref(fieldAttr.fieldName || field)} as ${sql.ref(`_joined_${joinModel}_${fieldAttr.fieldName || field}`)}`,
+								);
+								allSelectsStr.push({
+									joinModel,
+									fieldName: fieldAttr.fieldName || field,
+								});
+							}
+						}
+						query = query.select(allSelects);
+					}
+
+					const res = await query.execute();
+>>>>>>> 768a04162 (update: fix kysely join bug, exported some db name helpers, improve join tests and fixed kysely generation bug)
 					if (!res) return [];
 					return transformValueFromDB(res) as any;
 				},
