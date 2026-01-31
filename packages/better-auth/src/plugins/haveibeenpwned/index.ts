@@ -5,6 +5,7 @@ import { createHash } from "@better-auth/utils/hash";
 import { betterFetch } from "@better-fetch/fetch";
 import { APIError } from "../../api";
 import { isAPIError } from "../../utils/is-api-error";
+import { createLogger } from "@better-auth/core/env";
 
 declare module "@better-auth/core" {
 	interface BetterAuthPluginRegistry<_AuthOptions, _Options> {
@@ -59,6 +60,8 @@ async function checkPasswordCompromise(
 		}
 	} catch (error) {
 		if (isAPIError(error)) throw error;
+		const logger = createLogger();
+		logger.error("Failed to check password against HaveIBeenPwned API", error);
 		throw new APIError("INTERNAL_SERVER_ERROR", {
 			message: "Failed to check password. Please try again later.",
 		});
