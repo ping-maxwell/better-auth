@@ -628,7 +628,7 @@ export const drizzleAdapter = (db: DB, config: DrizzleAdapterConfig) => {
 			supportsArrays: config.provider === "pg" ? true : false,
 			// not all providers support dates
 			// one such example case is https://github.com/better-auth/better-auth/issues/7819
-			// it's safe to set to `false` without checking for provider, because it it is dates the transformation doesn't apply anyway.
+			// it's safe to set to `false` without checking for provider, because if it's a date the transformation doesn't apply anyway.
 			supportsDates: false,
 			transaction:
 				(config.transaction ?? false)
