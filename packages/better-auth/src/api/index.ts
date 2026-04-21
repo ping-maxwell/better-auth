@@ -11,6 +11,7 @@ import {
 	ATTR_HOOK_TYPE,
 	ATTR_HTTP_RESPONSE_STATUS_CODE,
 	ATTR_HTTP_ROUTE,
+	getOpenTelemetryAPI,
 	withSpan,
 } from "@better-auth/core/instrumentation";
 import { normalizePathname } from "@better-auth/core/utils/url";
@@ -277,7 +278,7 @@ export const router = <Option extends BetterAuthOptions>(
 	const { api, middlewares } = getEndpoints(ctx, options);
 	const basePath = new URL(ctx.baseURL).pathname;
 
-	return createRouter(api, {
+	const innerRouter = createRouter(api, {
 		routerContext: ctx,
 		openapi: {
 			disabled: true,
@@ -399,6 +400,41 @@ export const router = <Option extends BetterAuthOptions>(
 			}
 		},
 	});
+
+	const { trace } = getOpenTelemetryAPI();
+	const tracer = trace.getTracer("better-auth");
+	const innerHandler = innerRouter.handler;
+
+	return {
+		...innerRouter,
+		handler: (request: Request) => {
+			const method = request.method;
+			return tracer.startActiveSpan(
+				`HTTP ${method}`,
+				{ attributes: {} },
+				async (span) => {
+					try {
+						const response = await innerHandler(request);
+						span.setAttribute(
+							ATTR_HTTP_RESPONSE_STATUS_CODE,
+							response.status,
+						);
+						span.end();
+						return response;
+					} catch (err) {
+						span.recordException(err as Error);
+						const { SpanStatusCode } = getOpenTelemetryAPI();
+						span.setStatus({
+							code: SpanStatusCode.ERROR,
+							message: String((err as Error)?.message ?? err),
+						});
+						span.end();
+						throw err;
+					}
+				},
+			);
+		},
+	};
 };
 
 export {

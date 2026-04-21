@@ -206,4 +206,66 @@ describe("endpoints instrumentation", () => {
 		);
 		expect(span.attributes[ATTR_HTTP_ROUTE]).toBe("/route-with-params/:slug");
 	});
+
+	it("emits a root span that is updated with the low-cardinality route template", async () => {
+		const instance = await createTestInstance();
+		await instance.client.getSession();
+
+		const rootSpan = await waitForSpan(
+			(s) => s.name === "GET /get-session" && !s.parentSpanId,
+		);
+		expect(rootSpan.attributes[ATTR_HTTP_ROUTE]).toBe("/get-session");
+		expect(rootSpan.attributes[ATTR_HTTP_RESPONSE_STATUS_CODE]).toBeDefined();
+	});
+
+	it("updates root span with route template for parameterized endpoints", async () => {
+		const instance = await createTestInstance();
+		await instance.client.$fetch("/route-with-params/acme-segment", {
+			method: "GET",
+		});
+
+		const rootSpan = await waitForSpan(
+			(s) =>
+				s.name === "GET /route-with-params/:slug" && !s.parentSpanId,
+		);
+		expect(rootSpan.attributes[ATTR_HTTP_ROUTE]).toBe(
+			"/route-with-params/:slug",
+		);
+	});
+
+	it("emits a root span when the rate limiter rejects a request with 429", async () => {
+		const instance = await getTestInstance({
+			plugins: [],
+			rateLimit: {
+				enabled: true,
+				window: 60,
+				max: 0,
+			},
+		});
+
+		await instance.client.$fetch("/get-session", { method: "GET" });
+
+		const rootSpan = await waitForSpan(
+			(s) => s.name.startsWith("HTTP ") && !s.parentSpanId,
+		);
+		expect(rootSpan.name).toBe("HTTP GET");
+		expect(rootSpan.attributes[ATTR_HTTP_ROUTE]).toBeUndefined();
+		expect(rootSpan.attributes[ATTR_HTTP_RESPONSE_STATUS_CODE]).toBe(429);
+	});
+
+	it("emits a root span when onRequest returns early for a disabled path", async () => {
+		const instance = await getTestInstance({
+			plugins: [],
+			disabledPaths: ["/get-session"],
+		});
+
+		await instance.client.$fetch("/get-session", { method: "GET" });
+
+		const rootSpan = await waitForSpan(
+			(s) => s.name.startsWith("HTTP ") && !s.parentSpanId,
+		);
+		expect(rootSpan.name).toBe("HTTP GET");
+		expect(rootSpan.attributes[ATTR_HTTP_ROUTE]).toBeUndefined();
+		expect(rootSpan.attributes[ATTR_HTTP_RESPONSE_STATUS_CODE]).toBe(404);
+	});
 });
