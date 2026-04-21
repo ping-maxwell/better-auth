@@ -7,7 +7,8 @@ import {
 	ATTR_HTTP_ROUTE,
 	ATTR_OPERATION_ID,
 } from "@better-auth/core/instrumentation";
-import { trace } from "@opentelemetry/api";
+import { context, trace } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import {
 	InMemorySpanExporter,
@@ -78,6 +79,8 @@ async function waitForSpan(
 
 describe("endpoints instrumentation", () => {
 	beforeAll(() => {
+		const contextManager = new AsyncLocalStorageContextManager();
+		context.setGlobalContextManager(contextManager);
 		exporter = new InMemorySpanExporter();
 		provider = new NodeTracerProvider({
 			spanProcessors: [new SimpleSpanProcessor(exporter)],
@@ -86,6 +89,7 @@ describe("endpoints instrumentation", () => {
 	});
 
 	afterAll(async () => {
+		context.disable();
 		await provider.shutdown();
 	});
 
@@ -225,30 +229,38 @@ describe("endpoints instrumentation", () => {
 		});
 
 		const rootSpan = await waitForSpan(
-			(s) =>
-				s.name === "GET /route-with-params/:slug" && !s.parentSpanId,
+			(s) => s.name === "GET /route-with-params/:slug" && !s.parentSpanId,
 		);
 		expect(rootSpan.attributes[ATTR_HTTP_ROUTE]).toBe(
 			"/route-with-params/:slug",
 		);
 	});
 
-	it("emits a root span when the rate limiter rejects a request with 429", async () => {
-		const instance = await getTestInstance({
-			plugins: [],
-			rateLimit: {
-				enabled: true,
-				window: 60,
-				max: 0,
+	it("emits a root span when onRequest returns early with a 429", async () => {
+		const earlyRejectPlugin: BetterAuthPlugin = {
+			id: "early-reject",
+			async onRequest() {
+				return {
+					response: new Response(
+						JSON.stringify({ message: "Too many requests" }),
+						{ status: 429 },
+					),
+				};
 			},
+		};
+		const instance = await getTestInstance({
+			plugins: [earlyRejectPlugin],
 		});
 
-		await instance.client.$fetch("/get-session", { method: "GET" });
+		await instance.auth.handler(
+			new Request("http://localhost:3000/api/auth/get-session", {
+				method: "GET",
+			}),
+		);
 
 		const rootSpan = await waitForSpan(
-			(s) => s.name.startsWith("HTTP ") && !s.parentSpanId,
+			(s) => s.name === "HTTP GET" && !s.parentSpanId,
 		);
-		expect(rootSpan.name).toBe("HTTP GET");
 		expect(rootSpan.attributes[ATTR_HTTP_ROUTE]).toBeUndefined();
 		expect(rootSpan.attributes[ATTR_HTTP_RESPONSE_STATUS_CODE]).toBe(429);
 	});
@@ -259,13 +271,19 @@ describe("endpoints instrumentation", () => {
 			disabledPaths: ["/get-session"],
 		});
 
-		await instance.client.$fetch("/get-session", { method: "GET" });
+		await instance.auth.handler(
+			new Request("http://localhost:3000/api/auth/get-session", {
+				method: "GET",
+			}),
+		);
 
 		const rootSpan = await waitForSpan(
-			(s) => s.name.startsWith("HTTP ") && !s.parentSpanId,
+			(s) =>
+				s.name.startsWith("HTTP ") &&
+				!s.parentSpanId &&
+				s.attributes[ATTR_HTTP_RESPONSE_STATUS_CODE] === 404,
 		);
 		expect(rootSpan.name).toBe("HTTP GET");
 		expect(rootSpan.attributes[ATTR_HTTP_ROUTE]).toBeUndefined();
-		expect(rootSpan.attributes[ATTR_HTTP_RESPONSE_STATUS_CODE]).toBe(404);
 	});
 });

@@ -401,13 +401,13 @@ export const router = <Option extends BetterAuthOptions>(
 		},
 	});
 
-	const { trace } = getOpenTelemetryAPI();
-	const tracer = trace.getTracer("better-auth");
 	const innerHandler = innerRouter.handler;
 
 	return {
 		...innerRouter,
 		handler: (request: Request) => {
+			const { trace, SpanStatusCode } = getOpenTelemetryAPI();
+			const tracer = trace.getTracer("better-auth");
 			const method = request.method;
 			return tracer.startActiveSpan(
 				`HTTP ${method}`,
@@ -415,15 +415,11 @@ export const router = <Option extends BetterAuthOptions>(
 				async (span) => {
 					try {
 						const response = await innerHandler(request);
-						span.setAttribute(
-							ATTR_HTTP_RESPONSE_STATUS_CODE,
-							response.status,
-						);
+						span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, response.status);
 						span.end();
 						return response;
 					} catch (err) {
 						span.recordException(err as Error);
-						const { SpanStatusCode } = getOpenTelemetryAPI();
 						span.setStatus({
 							code: SpanStatusCode.ERROR,
 							message: String((err as Error)?.message ?? err),
