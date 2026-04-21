@@ -3677,3 +3677,88 @@ describe("organization additionalFields with returned: false", async () => {
 		expect(dbOrg?.secretField).toBe("updated-secret");
 	});
 });
+
+/**
+ * @see https://github.com/better-auth/better-auth/issues/9236
+ */
+describe("checkSlug returns true for existing slugs", async () => {
+	const { auth, signInWithTestUser } = await getTestInstance({
+		plugins: [organization()],
+		logger: {
+			level: "error",
+		},
+	});
+
+	const client = createAuthClient({
+		plugins: [organizationClient()],
+		baseURL: "http://localhost:3000/api/auth",
+		fetchOptions: {
+			customFetchImpl: async (url, init) => {
+				return auth.handler(new Request(url, init));
+			},
+		},
+	});
+
+	it("should return error when checking a slug that already exists", async () => {
+		const { headers } = await signInWithTestUser();
+
+		const created = await client.organization.create({
+			name: "my-org",
+			slug: "my-org",
+			fetchOptions: { headers },
+		});
+		expect(created.data).toBeDefined();
+		expect(created.data?.slug).toBe("my-org");
+
+		const checkExisting = await client.organization.checkSlug({
+			slug: "my-org",
+			fetchOptions: { headers },
+		});
+		expect(checkExisting.error?.status).toBe(400);
+		expect(checkExisting.error?.message).toBe(
+			ORGANIZATION_ERROR_CODES.ORGANIZATION_SLUG_ALREADY_TAKEN.message,
+		);
+		expect(checkExisting.data).toBeNull();
+	});
+
+	it("should return status true when checking a slug that does not exist", async () => {
+		const { headers } = await signInWithTestUser();
+
+		const checkNonExistent = await client.organization.checkSlug({
+			slug: "non-existent-slug-123",
+			fetchOptions: { headers },
+		});
+		expect(checkNonExistent.data?.status).toBe(true);
+		expect(checkNonExistent.error).toBeNull();
+	});
+
+	it("should return error via server API for existing slug", async () => {
+		const { headers } = await signInWithTestUser();
+
+		const created = await auth.api.createOrganization({
+			body: { name: "server-org", slug: "server-org" },
+			headers,
+		});
+		expect(created).toBeDefined();
+		expect(created.slug).toBe("server-org");
+
+		let thrownError: unknown;
+		try {
+			await auth.api.checkOrganizationSlug({
+				body: { slug: "server-org" },
+			});
+		} catch (e) {
+			thrownError = e;
+		}
+		expect(thrownError).toBeDefined();
+		expect(isAPIError(thrownError)).toBe(true);
+	});
+
+	it("should return status true via server API for non-existent slug", async () => {
+		const result = await auth.api.checkOrganizationSlug({
+			body: { slug: "does-not-exist" },
+		});
+		expect(result.status).toBe(true);
+	});
+});
+
