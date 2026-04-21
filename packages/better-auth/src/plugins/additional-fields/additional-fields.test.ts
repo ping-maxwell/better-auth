@@ -336,6 +336,344 @@ describe("additionalFields", async () => {
 	});
 });
 
+/**
+ * @see https://github.com/better-auth/better-auth/issues/9247
+ */
+describe("additionalFields with fieldName mapping", async () => {
+	it("should return additionalFields with custom fieldName in getSession", async () => {
+		const { auth, db } = await getTestInstance({
+			user: {
+				additionalFields: {
+					githubLogin: {
+						type: "string",
+						fieldName: "github_login",
+						required: false,
+						returned: true,
+						input: false,
+					},
+					githubId: {
+						type: "number",
+						fieldName: "github_id",
+						required: false,
+						returned: true,
+						input: false,
+					},
+					installationId: {
+						type: "string",
+						fieldName: "installation_id",
+						required: false,
+						returned: true,
+						input: false,
+					},
+					apiKey: {
+						type: "string",
+						fieldName: "api_key",
+						input: false,
+						required: false,
+						returned: false,
+					},
+				},
+			},
+		});
+
+		const res = await auth.api.signUpEmail({
+			body: {
+				email: "fieldname-test@test.com",
+				name: "FieldName Test",
+				password: "test-password",
+			},
+		});
+
+		await db.update({
+			model: "user",
+			where: [{ field: "id", value: res.user.id }],
+			update: {
+				githubLogin: "testuser",
+				githubId: 12345,
+				installationId: "inst_123",
+				apiKey: "secret-api-key",
+			},
+		});
+
+		const session = await auth.api.getSession({
+			headers: {
+				Authorization: `Bearer ${res.token}`,
+			},
+		});
+
+		expect(session).toBeTruthy();
+		expect(session?.user.githubLogin).toBe("testuser");
+		expect(session?.user.githubId).toBe(12345);
+		expect(session?.user.installationId).toBe("inst_123");
+		expect(session?.user).not.toHaveProperty("apiKey");
+	});
+
+	it("should return additionalFields with custom fieldName via cookie cache", async () => {
+		const { auth, client, testUser, db, cookieSetter } =
+			await getTestInstance({
+				user: {
+					additionalFields: {
+						githubLogin: {
+							type: "string",
+							fieldName: "github_login",
+							required: false,
+							returned: true,
+							input: false,
+						},
+						githubId: {
+							type: "number",
+							fieldName: "github_id",
+							required: false,
+							returned: true,
+							input: false,
+						},
+						apiKey: {
+							type: "string",
+							fieldName: "api_key",
+							input: false,
+							required: false,
+							returned: false,
+						},
+					},
+				},
+				session: {
+					cookieCache: {
+						enabled: true,
+						maxAge: 60 * 5,
+					},
+				},
+			});
+
+		const headers = new Headers();
+		await client.signIn.email(
+			{
+				email: testUser.email,
+				password: testUser.password,
+			},
+			{
+				onSuccess: cookieSetter(headers),
+			},
+		);
+
+		await db.update({
+			model: "user",
+			where: [{ field: "email", value: testUser.email }],
+			update: {
+				githubLogin: "testuser",
+				githubId: 99999,
+				apiKey: "secret-key",
+			},
+		});
+
+		const sessionFromDb = await auth.api.getSession({
+			query: { disableCookieCache: true },
+			headers,
+		});
+
+		expect(sessionFromDb?.user.githubLogin).toBe("testuser");
+		expect(sessionFromDb?.user.githubId).toBe(99999);
+		expect(sessionFromDb?.user).not.toHaveProperty("apiKey");
+
+		const sessionFromCache = await client.getSession({
+			fetchOptions: { headers },
+		});
+
+		expect(sessionFromCache.data?.user).not.toHaveProperty("apiKey");
+	});
+
+	it("should return additionalFields with returned: true and input: false on server API", async () => {
+		const { auth } = await getTestInstance({
+			user: {
+				additionalFields: {
+					role: {
+						type: "string",
+						fieldName: "user_role",
+						required: false,
+						returned: true,
+						input: false,
+						defaultValue: "member",
+					},
+					secretToken: {
+						type: "string",
+						fieldName: "secret_token",
+						required: false,
+						returned: false,
+						input: false,
+					},
+				},
+			},
+		});
+
+		const res = await auth.api.signUpEmail({
+			body: {
+				email: "role-test@test.com",
+				name: "Role Test",
+				password: "test-password",
+			},
+		});
+
+		const session = await auth.api.getSession({
+			headers: {
+				Authorization: `Bearer ${res.token}`,
+			},
+		});
+
+		expect(session).toBeTruthy();
+		expect(session?.user.role).toBe("member");
+		expect(session?.user).not.toHaveProperty("secretToken");
+	});
+
+	it("should return additionalFields updated after session creation (simulating OAuth callback hook)", async () => {
+		const { auth, db, client, cookieSetter } = await getTestInstance({
+			user: {
+				additionalFields: {
+					githubLogin: {
+						type: "string",
+						fieldName: "github_login",
+						required: false,
+						returned: true,
+						input: false,
+					},
+					githubId: {
+						type: "number",
+						fieldName: "github_id",
+						required: false,
+						returned: true,
+						input: false,
+					},
+					apiKey: {
+						type: "string",
+						fieldName: "api_key",
+						input: false,
+						required: false,
+						returned: false,
+					},
+				},
+			},
+			session: {
+				cookieCache: {
+					enabled: true,
+					maxAge: 60 * 5,
+				},
+			},
+		});
+
+		const signupRes = await auth.api.signUpEmail({
+			body: {
+				email: "hook-test@test.com",
+				name: "Hook Test",
+				password: "test-password",
+			},
+		});
+
+		await db.update({
+			model: "user",
+			where: [{ field: "id", value: signupRes.user.id }],
+			update: {
+				githubLogin: "hook-user",
+				githubId: 54321,
+				apiKey: "secret",
+			},
+		});
+
+		const serverSession = await auth.api.getSession({
+			headers: {
+				Authorization: `Bearer ${signupRes.token}`,
+			},
+		});
+
+		expect(serverSession).toBeTruthy();
+		expect(serverSession?.user.githubLogin).toBe("hook-user");
+		expect(serverSession?.user.githubId).toBe(54321);
+		expect(serverSession?.user).not.toHaveProperty("apiKey");
+
+		const headers = new Headers();
+		await client.signIn.email(
+			{
+				email: "hook-test@test.com",
+				password: "test-password",
+			},
+			{
+				onSuccess: cookieSetter(headers),
+			},
+		);
+
+		const clientSession = await client.getSession({
+			fetchOptions: { headers },
+		});
+
+		expect(clientSession.data?.user).toBeTruthy();
+		expect((clientSession.data?.user as any).githubLogin).toBe("hook-user");
+		expect((clientSession.data?.user as any).githubId).toBe(54321);
+		expect(clientSession.data?.user).not.toHaveProperty("apiKey");
+	});
+
+	it("should not include additionalFields in cookie cache if fields were updated after sign-in", async () => {
+		const { auth, db, client, cookieSetter } = await getTestInstance({
+			user: {
+				additionalFields: {
+					githubLogin: {
+						type: "string",
+						fieldName: "github_login",
+						required: false,
+						returned: true,
+						input: false,
+					},
+				},
+			},
+			session: {
+				cookieCache: {
+					enabled: true,
+					maxAge: 60 * 5,
+				},
+			},
+		});
+
+		const signupRes = await auth.api.signUpEmail({
+			body: {
+				email: "cache-test@test.com",
+				name: "Cache Test",
+				password: "test-password",
+			},
+		});
+
+		const headers = new Headers();
+		await client.signIn.email(
+			{
+				email: "cache-test@test.com",
+				password: "test-password",
+			},
+			{
+				onSuccess: cookieSetter(headers),
+			},
+		);
+
+		const sessionBeforeUpdate = await client.getSession({
+			fetchOptions: { headers },
+		});
+		expect((sessionBeforeUpdate.data?.user as any).githubLogin).toBeNull();
+
+		await db.update({
+			model: "user",
+			where: [{ field: "id", value: signupRes.user.id }],
+			update: {
+				githubLogin: "late-update",
+			},
+		});
+
+		const sessionFromCache = await client.getSession({
+			fetchOptions: { headers },
+		});
+		expect((sessionFromCache.data?.user as any).githubLogin).toBeNull();
+
+		const sessionFromDb = await auth.api.getSession({
+			query: { disableCookieCache: true },
+			headers,
+		});
+		expect(sessionFromDb?.user.githubLogin).toBe("late-update");
+	});
+});
+
 describe("runtime", async () => {
 	it("should apply default value function on runtime", async () => {
 		const { auth } = await getTestInstance({
