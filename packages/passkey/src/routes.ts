@@ -118,8 +118,8 @@ export const generatePasskeyRegistrationOptions = (
 		"/passkey/generate-register-options",
 		{
 			method: "GET",
-			use: requireSession ? [freshSessionMiddleware] : undefined,
-			query: generatePasskeyQuerySchema,
+		use: requireSession ? [freshSessionMiddleware] : [],
+		query: generatePasskeyQuerySchema,
 			metadata: {
 				openapi: {
 					operationId: "generatePasskeyRegistrationOptions",
@@ -513,8 +513,8 @@ export const verifyPasskeyRegistration = (options: RequiredPassKeyOptions) => {
 		{
 			method: "POST",
 			body: verifyPasskeyRegistrationBodySchema,
-			use: requireSession ? [freshSessionMiddleware] : undefined,
-			metadata: {
+		use: requireSession ? [freshSessionMiddleware] : [],
+		metadata: {
 				openapi: {
 					operationId: "passkeyVerifyRegistration",
 					description: "Verify registration of a new passkey",
