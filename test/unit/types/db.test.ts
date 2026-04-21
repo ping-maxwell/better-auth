@@ -5,11 +5,12 @@ import type {
 } from "@better-auth/core";
 import type {
 	Account,
+	InferDBValueType,
 	Session,
 	User,
 	Verification,
 } from "@better-auth/core/db";
-import { expectTypeOf, test } from "vitest";
+import { describe, expectTypeOf, test } from "vitest";
 
 const testPlugin = () => {
 	return {
@@ -313,4 +314,62 @@ test("User with both additionalFields and plugin fields", () => {
 	expectTypeOf<FinalUser["customField"]>().toEqualTypeOf<string>();
 	expectTypeOf<FinalUser["pluginField"]>().toEqualTypeOf<number>();
 	expectTypeOf<FinalUser["email"]>().toEqualTypeOf<string>();
+});
+
+/**
+ * @see https://github.com/better-auth/better-auth/issues/8619
+ */
+describe("Date field types when supportsDates: false", () => {
+	test("InferDBValueType<'date'> always resolves to Date with no adapter awareness", () => {
+		type DateFieldType = InferDBValueType<"date">;
+
+		// This is the current behavior: date fields always resolve to Date.
+		// When an adapter sets supportsDates: false and customTransformOutput
+		// returns non-Date values (e.g. ISO strings), the types don't reflect it.
+		expectTypeOf<DateFieldType>().toEqualTypeOf<Date>();
+
+		// There is no way to parameterize InferDBValueType with adapter config.
+		// The type unconditionally maps "date" -> Date (line 22-23 of type.ts).
+	});
+
+	test("User.createdAt and User.updatedAt are always typed as Date", () => {
+		type DefaultUser = User;
+		// Core schema defines createdAt/updatedAt as z.date(), so they're always Date.
+		// An adapter with supportsDates: false stores them as ISO strings internally,
+		// and the adapter factory's transformOutput converts them back to Date.
+		// But if customTransformOutput overrides this, the runtime value could be a string
+		// while the type still says Date.
+		expectTypeOf<DefaultUser["createdAt"]>().toEqualTypeOf<Date>();
+		expectTypeOf<DefaultUser["updatedAt"]>().toEqualTypeOf<Date>();
+
+		// This demonstrates the type gap: there's no way for an adapter to signal
+		// that date fields should be typed as string | Date or string.
+	});
+
+	test("Session.expiresAt is always typed as Date", () => {
+		type DefaultSession = Session;
+		// Same issue: expiresAt is z.date() in the session schema,
+		// always typed as Date regardless of adapter configuration.
+		expectTypeOf<DefaultSession["expiresAt"]>().toEqualTypeOf<Date>();
+	});
+
+	test("Additional date fields from plugins/options always resolve to Date", () => {
+		const options = {
+			user: {
+				additionalFields: {
+					lastLoginAt: {
+						type: "date" as const,
+						required: true,
+					},
+				},
+			},
+		} satisfies BetterAuthOptions;
+
+		type FinalUser = User<(typeof options)["user"]>;
+
+		// Even user-defined date fields always resolve to Date.
+		// If the adapter stores these as ISO strings and customTransformOutput
+		// keeps them as strings, the types will be wrong.
+		expectTypeOf<FinalUser["lastLoginAt"]>().toEqualTypeOf<Date>();
+	});
 });

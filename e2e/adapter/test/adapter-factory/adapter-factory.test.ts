@@ -2104,3 +2104,80 @@ describe("Fallback JoinOption System", async () => {
 		});
 	});
 });
+
+/**
+ * @see https://github.com/better-auth/better-auth/issues/8619
+ */
+describe("Date field types when supportsDates: false", () => {
+	test("customTransformOutput can return non-Date values for date fields, but types still say Date", async () => {
+		const adapter = await createTestAdapter({
+			config: {
+				supportsDates: false,
+				customTransformOutput({ data, fieldAttributes }) {
+					if (fieldAttributes.type === "date" && data instanceof Date) {
+						return data.getTime();
+					}
+					return data;
+				},
+			},
+			adapter: () => ({
+				async create(data) {
+					return data.data;
+				},
+				async findOne() {
+					return {
+						id: "user-123",
+						email: "test@test.com",
+						emailVerified: false,
+						createdAt: "2024-01-01T00:00:00.000Z",
+						updatedAt: "2024-01-01T00:00:00.000Z",
+						name: "Test User",
+					};
+				},
+			}),
+		});
+
+		const result = await adapter.findOne<User>({
+			model: "user",
+			where: [{ field: "id", value: "user-123" }],
+		});
+
+		// At runtime, customTransformOutput converts the Date back to a number
+		// (the adapter factory first converts the ISO string to Date via supportsDates: false handling,
+		// then customTransformOutput converts Date -> number).
+		// But the TypeScript type of result.createdAt is still Date.
+		expect(result).not.toBeNull();
+		expect(typeof result!.createdAt).toBe("number");
+		expect(typeof result!.updatedAt).toBe("number");
+	});
+
+	test("without customTransformOutput, supportsDates: false correctly converts strings to Date", async () => {
+		const adapter = await createTestAdapter({
+			config: {
+				supportsDates: false,
+			},
+			adapter: () => ({
+				async findOne() {
+					return {
+						id: "user-123",
+						email: "test@test.com",
+						emailVerified: false,
+						createdAt: "2024-01-01T00:00:00.000Z",
+						updatedAt: "2024-01-01T00:00:00.000Z",
+						name: "Test User",
+					};
+				},
+			}),
+		});
+
+		const result = await adapter.findOne<User>({
+			model: "user",
+			where: [{ field: "id", value: "user-123" }],
+		});
+
+		// Without customTransformOutput, the adapter factory correctly converts strings to Date
+		expect(result).not.toBeNull();
+		expect(result!.createdAt).toBeInstanceOf(Date);
+		expect(result!.updatedAt).toBeInstanceOf(Date);
+	});
+});
