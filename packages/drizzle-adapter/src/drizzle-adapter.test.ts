@@ -134,16 +134,34 @@ describe("drizzle-adapter", () => {
 
 	/**
 	 * @see https://github.com/better-auth/better-auth/issues/9287
+	 *
+	 * Tests the raw adapter's withReturning behavior for MySQL when
+	 * the inserted data has no `id` field (simulating generateId:false).
+	 * We invoke the raw adapter directly (via the factory return, but with
+	 * disableTransformInput/Output so the factory doesn't interfere).
 	 */
-	describe("MySQL withReturning fallback returns wrong row when generateId is false", () => {
+	describe("MySQL withReturning safety for generateId:false", () => {
 		const defaultSecret = "test-secret-that-is-at-least-32-chars-long!!";
+
+		const sessionTable = {
+			id: { name: "id" },
+			token: { name: "token" },
+			userId: { name: "userId" },
+			expiresAt: { name: "expiresAt" },
+			ipAddress: { name: "ipAddress" },
+			userAgent: { name: "userAgent" },
+			createdAt: { name: "createdAt" },
+			updatedAt: { name: "updatedAt" },
+		};
 
 		function createMysqlMockDb(
 			schema: Record<string, Record<string, any>>,
 			tableRows: Record<string, any[]>,
+			opts?: { $returningId?: (values: any) => any[] },
 		) {
-			const selectChain = (tableName: string) => {
+			const selectChain = () => {
 				const chain: any = {};
+				chain._whereId = undefined as string | undefined;
 				chain.from = vi.fn().mockImplementation((schemaModel: any) => {
 					const modelName = Object.keys(schema).find(
 						(k) => schema[k] === schemaModel,
@@ -152,6 +170,19 @@ describe("drizzle-adapter", () => {
 					return chain;
 				});
 				chain.where = vi.fn().mockImplementation((..._args: any[]) => {
+					chain._hasWhere = true;
+					const expr = _args[0];
+					if (expr && typeof expr === "object" && "queryChunks" in expr) {
+						const chunks = expr.queryChunks;
+						if (Array.isArray(chunks)) {
+							for (const chunk of chunks) {
+								if (typeof chunk === "string" && chunk.length > 0) {
+									chain._whereId = chunk;
+									break;
+								}
+							}
+						}
+					}
 					return chain;
 				});
 				chain.orderBy = vi.fn().mockImplementation((..._args: any[]) => {
@@ -165,6 +196,10 @@ describe("drizzle-adapter", () => {
 					const modelName = chain._modelName;
 					if (modelName && tableRows[modelName]) {
 						const rows = [...tableRows[modelName]];
+						if (chain._hasWhere && chain._whereId) {
+							const match = rows.find((r) => r.id === chain._whereId);
+							return Promise.resolve(match ? [match] : []);
+						}
 						if (chain._ordered) {
 							rows.sort((a, b) => {
 								if (a.id > b.id) return -1;
@@ -185,37 +220,35 @@ describe("drizzle-adapter", () => {
 				return chain;
 			};
 
+			let lastInsertedValues: any = null;
+
 			const insertChain: any = {};
-			insertChain.values = vi.fn().mockImplementation((_values: any) => {
+			insertChain.values = vi.fn().mockImplementation((values: any) => {
+				lastInsertedValues = values;
 				insertChain.config = { values: [{}] };
 				return insertChain;
 			});
 			insertChain.execute = vi.fn().mockResolvedValue(undefined);
 			insertChain.returning = vi.fn();
 
+			if (opts?.$returningId) {
+				insertChain.$returningId = vi.fn().mockImplementation(() => {
+					return Promise.resolve(opts.$returningId!(lastInsertedValues));
+				});
+			}
+
 			return {
 				_: { fullSchema: schema },
-				select: vi.fn().mockImplementation((...args: any[]) => {
-					return selectChain(args[0]);
+				select: vi.fn().mockImplementation(() => {
+					return selectChain();
 				}),
-				insert: vi.fn().mockImplementation((_schemaModel: any) => {
+				insert: vi.fn().mockImplementation(() => {
 					return insertChain;
 				}),
 			} as any;
 		}
 
-		it("should return the wrong session row due to ORDER BY id DESC fallback with non-monotonic IDs", async () => {
-			const sessionTable = {
-				id: { name: "id" },
-				token: { name: "token" },
-				userId: { name: "userId" },
-				expiresAt: { name: "expiresAt" },
-				ipAddress: { name: "ipAddress" },
-				userAgent: { name: "userAgent" },
-				createdAt: { name: "createdAt" },
-				updatedAt: { name: "updatedAt" },
-			};
-
+		it("should use $returningId() when available and return the correct row", async () => {
 			const existingRows = [
 				{
 					id: "zzzz-existing-session",
@@ -242,10 +275,16 @@ describe("drizzle-adapter", () => {
 			const db = createMysqlMockDb(
 				{ session: sessionTable },
 				{ session: existingRows },
+				{
+					$returningId: () => [{ id: "aaaa-new-session-for-user-a" }],
+				},
 			);
 
 			const factory = drizzleAdapter(db, { provider: "mysql" });
-			const adapter = factory({ secret: defaultSecret });
+			const adapter = factory({
+				secret: defaultSecret,
+				advanced: { database: { generateId: false } },
+			});
 
 			const insertedSession = await adapter.create({
 				model: "session",
@@ -258,33 +297,49 @@ describe("drizzle-adapter", () => {
 				},
 			});
 
-			// BUG: The adapter falls through to `ORDER BY id DESC LIMIT 1`,
-			// which returns "zzzz-existing-session" (User X's session)
-			// instead of the newly inserted session for User A.
-			// This is because the insert data has no `id` field
-			// (generateId: false) and builder.config.values[0].id.value is
-			// undefined, so the last else branch runs.
-			expect(insertedSession.userId).toBe("user-x");
-			expect(insertedSession.id).toBe("zzzz-existing-session");
-
-			// What SHOULD happen: the adapter should return the row for user-a,
-			// or throw an error instead of silently returning the wrong row.
-			// Uncomment below to see the correct assertion that would pass after a fix:
-			// expect(insertedSession.userId).toBe("user-a");
+			const insertCall = db.insert.mock.results[0].value;
+			expect(insertCall.$returningId).toHaveBeenCalled();
+			expect(insertedSession).not.toBeNull();
+			expect(insertedSession.id).toBe("aaaa-new-session-for-user-a");
+			expect(insertedSession.userId).toBe("user-a");
 		});
 
-		it("demonstrates the fallback path is reached when data has no id and builder values have no id", async () => {
-			const sessionTable = {
-				id: { name: "id" },
-				token: { name: "token" },
-				userId: { name: "userId" },
-				expiresAt: { name: "expiresAt" },
-				ipAddress: { name: "ipAddress" },
-				userAgent: { name: "userAgent" },
-				createdAt: { name: "createdAt" },
-				updatedAt: { name: "updatedAt" },
-			};
+		it("should throw a descriptive error when $returningId is not available and id is unknown", async () => {
+			const existingRows = [
+				{
+					id: "zzzz-existing-session",
+					token: "token-for-user-x",
+					userId: "user-x",
+					expiresAt: new Date(),
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				},
+			];
 
+			const db = createMysqlMockDb(
+				{ session: sessionTable },
+				{ session: existingRows },
+			);
+
+			const factory = drizzleAdapter(db, { provider: "mysql" });
+			const adapter = factory({
+				secret: defaultSecret,
+				advanced: { database: { generateId: false } },
+			});
+
+			await expect(
+				adapter.create({
+					model: "session",
+					data: {
+						token: "token-for-user-a",
+						userId: "user-a",
+						expiresAt: new Date(),
+					},
+				}),
+			).rejects.toThrow(/Cannot safely retrieve the inserted row/);
+		});
+
+		it("should throw instead of silently returning the wrong row for a different user", async () => {
 			const existingRows = [
 				{
 					id: "zzzz-old-session",
@@ -310,22 +365,53 @@ describe("drizzle-adapter", () => {
 			);
 
 			const factory = drizzleAdapter(db, { provider: "mysql" });
+			const adapter = factory({
+				secret: defaultSecret,
+				advanced: { database: { generateId: false } },
+			});
+
+			await expect(
+				adapter.create({
+					model: "session",
+					data: {
+						token: "userB-token",
+						userId: "user-b",
+						expiresAt: new Date(),
+					},
+				}),
+			).rejects.toThrow(/generateId/);
+		});
+
+		it("should still work when factory generates IDs (default behavior)", async () => {
+			const existingRows = [
+				{
+					id: "zzzz-existing-session",
+					token: "token-for-user-x",
+					userId: "user-x",
+					expiresAt: new Date(),
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				},
+			];
+
+			const db = createMysqlMockDb(
+				{ session: sessionTable },
+				{ session: existingRows },
+			);
+
+			const factory = drizzleAdapter(db, { provider: "mysql" });
 			const adapter = factory({ secret: defaultSecret });
 
 			const result = await adapter.create({
 				model: "session",
 				data: {
-					token: "userB-token",
-					userId: "user-b",
+					token: "token-for-user-a",
+					userId: "user-a",
 					expiresAt: new Date(),
 				},
 			});
 
-			// Both User A and User B get the SAME session returned:
-			// the one belonging to unrelated-user with the lexicographically
-			// highest id ("zzzz-old-session").
-			expect(result.userId).toBe("unrelated-user");
-			expect(result.userId).not.toBe("user-b");
+			expect(result).toBeDefined();
 		});
 	});
 });
