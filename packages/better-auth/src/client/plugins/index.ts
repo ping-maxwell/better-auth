@@ -1,5 +1,9 @@
 //#region Necessary re-exports
 export type * from "../../types/helper";
+export type {
+	FieldAttributeToObject,
+	RemoveFieldsWithReturnedFalse,
+} from "../../db/field";
 //#endregion
 
 export * from "../../plugins/additional-fields/client";
