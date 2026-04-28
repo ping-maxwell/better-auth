@@ -2,4 +2,4 @@
 "better-auth": patch
 ---
 
-fix: missing state-cookie skip for oauth-provider
+fix: missing state-cookie skip for oauth-proxy
