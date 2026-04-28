@@ -334,7 +334,13 @@ export const oAuthProxy = <O extends OAuthProxyOptions>(opts?: O) => {
 							statePackage =
 								parseJSON<OAuthProxyStatePackage>(decryptedPackage);
 						} catch {
-							// Not an OAuth proxy state, continue normally
+							// State is either a regular (non-proxy) state, or an encrypted proxy
+							// package that can't be decrypted (e.g. different secrets on preview vs production).
+							// If you're using oauth-proxy and seeing state_mismatch errors, ensure all
+							// environments share the same `secret` in the oAuthProxy plugin options.
+							ctx.context.logger.debug(
+								"OAuth proxy: could not decrypt state package, falling back to regular callback",
+							);
 							return;
 						}
 
