@@ -237,7 +237,9 @@ export const oAuthProxy = <O extends OAuthProxyOptions>(opts?: O) => {
 
 					// Clean up OAuth state
 					try {
-						await parseGenericState(ctx, payload.state);
+						await parseGenericState(ctx, payload.state, {
+							skipStateCookieCheck: true,
+						});
 					} catch (e) {
 						ctx.context.logger.warn("Failed to clean up OAuth state", e);
 					}

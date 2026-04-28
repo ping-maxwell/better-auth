@@ -138,7 +138,7 @@ export async function generateGenericState(
 export async function parseGenericState(
 	c: GenericEndpointContext,
 	state: string,
-	settings?: { cookieName: string; skipStateCookieCheck?: boolean },
+	settings?: { cookieName?: string; skipStateCookieCheck?: boolean },
 ) {
 	const storeStateStrategy = c.context.oauthConfig.storeStateStrategy;
 	let parsedData: StateData;
