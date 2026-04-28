@@ -1,64 +1,12 @@
-import type { AuthContext, BetterAuthOptions, UIPage } from "@better-auth/core";
-import type { SocialProvider } from "@better-auth/ui";
-import {
-	getForgotPasswordPage,
-	getProfilePage,
-	getResetPasswordPage,
-	getSignInPage,
-	getSignUpPage,
-	getVerifyEmailPage,
-} from "@better-auth/ui";
+import type { AuthContext, BetterAuthOptions } from "@better-auth/core";
+import type { BetterAuthUIConfig, SocialProvider } from "@better-auth/ui";
+import { loadAssets } from "@better-auth/ui";
 
 export type UIHandlerOptions = {
 	context: Promise<AuthContext>;
 	options: BetterAuthOptions;
 };
 
-/**
- * Collect UI pages from all plugins
- */
-function collectPluginPages(options: BetterAuthOptions): UIPage[] {
-	const pages: UIPage[] = [];
-
-	if (options.plugins) {
-		for (const plugin of options.plugins) {
-			if (plugin.ui?.pages) {
-				pages.push(...plugin.ui.pages);
-			}
-		}
-	}
-
-	return pages;
-}
-
-/**
- * Create a 404 Not Found response
- */
-function notFoundResponse(): Response {
-	return new Response("Not Found", {
-		status: 404,
-		headers: {
-			"Content-Type": "text/plain",
-		},
-	});
-}
-
-/**
- * Create an HTML response
- */
-function htmlResponse(html: string): Response {
-	return new Response(html, {
-		status: 200,
-		headers: {
-			"Content-Type": "text/html; charset=utf-8",
-			"Cache-Control": "no-store",
-		},
-	});
-}
-
-/**
- * Normalize a path by removing trailing slashes and ensuring leading slash
- */
 function normalizePath(path: string): string {
 	let normalized = path;
 	if (!normalized.startsWith("/")) {
@@ -70,9 +18,6 @@ function normalizePath(path: string): string {
 	return normalized;
 }
 
-/**
- * Get social providers from auth options
- */
 function getSocialProviders(options: BetterAuthOptions): SocialProvider[] {
 	const providers: SocialProvider[] = [];
 
@@ -88,141 +33,165 @@ function getSocialProviders(options: BetterAuthOptions): SocialProvider[] {
 	return providers;
 }
 
-/**
- * Create the UI handler for serving auth pages
- */
+function getPageFromPath(
+	relativePath: string,
+): BetterAuthUIConfig["page"] | null {
+	switch (relativePath) {
+		case "/sign-in":
+			return "sign-in";
+		case "/sign-up":
+			return "sign-up";
+		case "/forgot-password":
+			return "forgot-password";
+		case "/reset-password":
+			return "reset-password";
+		case "/verify-email":
+			return "verify-email";
+		case "/profile":
+			return "profile";
+		default:
+			return null;
+	}
+}
+
+function createConfigScript(config: BetterAuthUIConfig): string {
+	return `<script>window.__BETTER_AUTH_UI__=${JSON.stringify(config)};</script>`;
+}
+
+function injectConfig(html: string, config: BetterAuthUIConfig): string {
+	const configScript = createConfigScript(config);
+	return html.replace(
+		"<!-- CONFIG_PLACEHOLDER: BetterAuth injects <script>window.__BETTER_AUTH_UI__ = {...}</script> here -->",
+		configScript,
+	);
+}
+
+function injectTitle(html: string, title: string): string {
+	return html.replace("<title>Better Auth</title>", `<title>${title}</title>`);
+}
+
+function fixAssetPaths(html: string, assetsPath: string): string {
+	return html
+		.replace('src="/__better-auth/auth.js"', `src="${assetsPath}/auth.js"`)
+		.replace('href="/__better-auth/auth.css"', `href="${assetsPath}/auth.css"`);
+}
+
 export function createUIHandler({ context, options }: UIHandlerOptions) {
 	const uiOptions = options.ui;
 
 	if (!uiOptions || uiOptions.enabled === false) {
 		return async (_request: Request): Promise<Response> => {
-			return notFoundResponse();
+			return new Response("Not Found", { status: 404 });
 		};
 	}
 
-	const pluginPages = collectPluginPages(options);
 	const basePath = normalizePath(uiOptions.basePath ?? "/auth");
-
-	const pluginPageMap = new Map<string, UIPage>();
-	for (const page of pluginPages) {
-		const fullPath = normalizePath(basePath + normalizePath(page.path));
-		pluginPageMap.set(fullPath, page);
-	}
-
-	const customPageMap = new Map<string, UIPage>();
-	if (uiOptions.customPages) {
-		for (const page of uiOptions.customPages) {
-			const fullPath = normalizePath(basePath + normalizePath(page.path));
-			customPageMap.set(fullPath, page);
-		}
-	}
+	const assetsPath = `${basePath}/__assets`;
 
 	return async (request: Request): Promise<Response> => {
 		if (request.method !== "GET") {
 			return new Response("Method Not Allowed", {
 				status: 405,
+				headers: { Allow: "GET" },
+			});
+		}
+
+		const url = new URL(request.url);
+		const pathname = normalizePath(url.pathname);
+
+		if (!pathname.startsWith(basePath)) {
+			return new Response("Not Found", { status: 404 });
+		}
+
+		const assets = loadAssets();
+
+		if (pathname === `${assetsPath}/auth.js`) {
+			return new Response(assets.js, {
 				headers: {
-					"Content-Type": "text/plain",
-					Allow: "GET",
+					"Content-Type": "application/javascript; charset=utf-8",
+					"Cache-Control": "public, max-age=31536000, immutable",
 				},
 			});
 		}
 
-		const ctx = await context;
-		const url = new URL(request.url);
-		const pathname = normalizePath(url.pathname);
+		if (pathname === `${assetsPath}/auth.css`) {
+			return new Response(assets.css, {
+				headers: {
+					"Content-Type": "text/css; charset=utf-8",
+					"Cache-Control": "public, max-age=31536000, immutable",
+				},
+			});
+		}
 
+		const relativePath = pathname.replace(basePath, "") || "/sign-in";
+		const page = getPageFromPath(relativePath);
+
+		if (!page) {
+			return new Response("Not Found", { status: 404 });
+		}
+
+		const pages = uiOptions.pages || {};
+		const pageSettings: Record<string, { enabled?: boolean } | undefined> = {
+			"sign-in": pages.signIn,
+			"sign-up": pages.signUp,
+			"forgot-password": pages.forgotPassword,
+			"reset-password": pages.resetPassword,
+			"verify-email": pages.verifyEmail,
+			profile: pages.profile,
+		};
+
+		if (pageSettings[page]?.enabled === false) {
+			return new Response("Not Found", { status: 404 });
+		}
+
+		const ctx = await context;
 		const apiBaseUrl =
 			uiOptions.apiBaseUrl || `${ctx.baseURL}${ctx.options.basePath || ""}`;
 
-		const baseOptions = {
+		const config: BetterAuthUIConfig = {
+			apiBaseUrl,
 			appName: uiOptions.theme?.appName || ctx.appName,
 			logo: uiOptions.theme?.logo,
-			apiBaseUrl,
-			theme: uiOptions.theme,
+			redirectTo: uiOptions.redirectTo || "/",
 			socialProviders: getSocialProviders(options),
-			redirectTo: uiOptions.redirectTo,
+			features: {
+				emailPassword: options.emailAndPassword?.enabled !== false,
+				passkey: !!options.plugins?.some((p) => p.id === "passkey"),
+				magicLink: !!options.plugins?.some((p) => p.id === "magic-link"),
+				rememberMe: true,
+				emailVerification: options.emailVerification?.sendOnSignUp ?? false,
+			},
+			paths: {
+				signIn: `${basePath}/sign-in`,
+				signUp: `${basePath}/sign-up`,
+				forgotPassword: `${basePath}/forgot-password`,
+				resetPassword: `${basePath}/reset-password`,
+				verifyEmail: `${basePath}/verify-email`,
+				profile: `${basePath}/profile`,
+			},
+			minPasswordLength: options.emailAndPassword?.minPasswordLength ?? 8,
+			page,
 		};
 
-		if (customPageMap.has(pathname)) {
-			const page = customPageMap.get(pathname)!;
-			return htmlResponse(page.html);
-		}
+		const pageTitles: Record<BetterAuthUIConfig["page"], string> = {
+			"sign-in": `Sign In - ${config.appName}`,
+			"sign-up": `Sign Up - ${config.appName}`,
+			"forgot-password": `Forgot Password - ${config.appName}`,
+			"reset-password": `Reset Password - ${config.appName}`,
+			"verify-email": `Verify Email - ${config.appName}`,
+			profile: `Profile - ${config.appName}`,
+		};
 
-		if (pluginPageMap.has(pathname)) {
-			const page = pluginPageMap.get(pathname)!;
-			return htmlResponse(page.html);
-		}
+		let html = assets.html;
+		html = fixAssetPaths(html, assetsPath);
+		html = injectConfig(html, config);
+		html = injectTitle(html, pageTitles[page]);
 
-		const relativePath = basePath
-			? pathname.replace(basePath, "") || "/"
-			: pathname;
-
-		const pages = uiOptions.pages || {};
-
-		switch (relativePath) {
-			case "/sign-in":
-				if (pages.signIn?.enabled === false) return notFoundResponse();
-				return htmlResponse(
-					getSignInPage({
-						...baseOptions,
-						emailPassword: options.emailAndPassword?.enabled !== false,
-						passkey: !!options.plugins?.some((p) => p.id === "passkey"),
-						signUpUrl: `${basePath}/sign-up`,
-						forgotPasswordUrl: `${basePath}/forgot-password`,
-					}),
-				);
-
-			case "/sign-up":
-				if (pages.signUp?.enabled === false) return notFoundResponse();
-				return htmlResponse(
-					getSignUpPage({
-						...baseOptions,
-						emailPassword: options.emailAndPassword?.enabled !== false,
-						requireEmailVerification:
-							options.emailVerification?.sendOnSignUp ?? false,
-						signInUrl: `${basePath}/sign-in`,
-					}),
-				);
-
-			case "/forgot-password":
-				if (pages.forgotPassword?.enabled === false) return notFoundResponse();
-				return htmlResponse(
-					getForgotPasswordPage({
-						...baseOptions,
-						signInUrl: `${basePath}/sign-in`,
-					}),
-				);
-
-			case "/reset-password":
-				if (pages.resetPassword?.enabled === false) return notFoundResponse();
-				return htmlResponse(
-					getResetPasswordPage({
-						...baseOptions,
-						signInUrl: `${basePath}/sign-in`,
-					}),
-				);
-
-			case "/verify-email":
-				if (pages.verifyEmail?.enabled === false) return notFoundResponse();
-				return htmlResponse(
-					getVerifyEmailPage({
-						...baseOptions,
-						signInUrl: `${basePath}/sign-in`,
-					}),
-				);
-
-			case "/profile":
-				if (pages.profile?.enabled === false) return notFoundResponse();
-				return htmlResponse(
-					getProfilePage({
-						...baseOptions,
-						signInUrl: `${basePath}/sign-in`,
-					}),
-				);
-
-			default:
-				return notFoundResponse();
-		}
+		return new Response(html, {
+			headers: {
+				"Content-Type": "text/html; charset=utf-8",
+				"Cache-Control": "no-store",
+			},
+		});
 	};
 }

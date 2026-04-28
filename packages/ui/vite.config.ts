@@ -1,33 +1,29 @@
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import dts from "vite-plugin-dts";
 
 export default defineConfig({
-	plugins: [
-		react(),
-		dts({
-			include: ["src/**/*.ts", "src/**/*.tsx"],
-			exclude: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-		}),
-	],
+	plugins: [react()],
+	root: "src/app",
+	base: "/__better-auth/",
 	build: {
-		lib: {
-			entry: resolve(__dirname, "src/index.ts"),
-			formats: ["es"],
-			fileName: "index",
-		},
+		outDir: resolve(__dirname, "dist"),
+		emptyOutDir: true,
 		rollupOptions: {
-			external: ["react", "react-dom", "react/jsx-runtime", "react-dom/server"],
+			input: resolve(__dirname, "src/app/index.html"),
 			output: {
-				globals: {
-					react: "React",
-					"react-dom": "ReactDOM",
+				entryFileNames: "auth.js",
+				chunkFileNames: "auth-[hash].js",
+				assetFileNames: (assetInfo) => {
+					if (assetInfo.name?.endsWith(".css")) {
+						return "auth.css";
+					}
+					return "assets/[name]-[hash][extname]";
 				},
 			},
 		},
-		minify: false,
-		sourcemap: true,
+		minify: "terser",
+		sourcemap: false,
 	},
 	resolve: {
 		alias: {
