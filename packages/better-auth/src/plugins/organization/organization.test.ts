@@ -3677,3 +3677,145 @@ describe("organization additionalFields with returned: false", async () => {
 		expect(dbOrg?.secretField).toBe("updated-secret");
 	});
 });
+
+/**
+ * @see https://github.com/better-auth/better-auth/issues/9322
+ *
+ * This test validates that when a member without `invitation:create` permission
+ * tries to create an invitation via `auth.api.createInvitation`, the error is
+ * properly returned as an APIError (or HTTP 403 Response), not as an uncaught
+ * RangeError from the Response constructor.
+ *
+ * The reported issue was that `new Response(...)` was being called with a
+ * string status (e.g. "FORBIDDEN") instead of a numeric status code (403),
+ * causing `RangeError: init["status"] must be in the range of 200 to 599`.
+ */
+describe("organization: auth.api.createInvitation throws uncaught RangeError", async () => {
+	const { auth, signInWithTestUser, signInWithUser } = await getTestInstance({
+		plugins: [
+			organization({
+				async sendInvitationEmail() {},
+			}),
+		],
+	});
+
+	const { headers: ownerHeaders, user: ownerUser } = await signInWithTestUser();
+
+	// Create an organization
+	const org = await auth.api.createOrganization({
+		body: { name: "test-org-9322", slug: "test-org-9322" },
+		headers: ownerHeaders,
+	});
+	if (!org) throw new Error("Organization not created");
+
+	// Create a second user who will be a member
+	const memberUser = {
+		email: "member-9322@test.com",
+		password: "test123456",
+		name: "Member User",
+	};
+	await auth.api.signUpEmail({ body: memberUser });
+	const { headers: memberHeaders } = await signInWithUser(
+		memberUser.email,
+		memberUser.password,
+	);
+
+	// Invite the member to the organization with "member" role
+	const invitation = await auth.api.createInvitation({
+		body: {
+			email: memberUser.email,
+			role: "member",
+			organizationId: org.id,
+		},
+		headers: ownerHeaders,
+	});
+	expect(invitation).toBeDefined();
+
+	// Accept the invitation as the member
+	await auth.api.acceptInvitation({
+		body: { invitationId: invitation.id },
+		headers: memberHeaders,
+	});
+
+	// Set the org as active for the member
+	await auth.api.setActiveOrganization({
+		body: { organizationId: org.id },
+		headers: memberHeaders,
+	});
+
+	it("should throw proper APIError when member lacks permission (not RangeError)", async () => {
+		// Member tries to create an invitation but lacks `invitation:create` permission
+		// This should throw a FORBIDDEN APIError, not a RangeError
+		try {
+			await auth.api.createInvitation({
+				body: {
+					email: "someone@example.com",
+					role: "member",
+					organizationId: org.id,
+				},
+				headers: memberHeaders,
+			});
+			expect.fail("Should have thrown an error");
+		} catch (error) {
+			// Should be an APIError with FORBIDDEN status, not a RangeError
+			expect(error).not.toBeInstanceOf(RangeError);
+			expect(isAPIError(error)).toBe(true);
+			if (isAPIError(error)) {
+				expect(error.status).toBe("FORBIDDEN");
+			}
+		}
+	});
+
+	it("should return proper HTTP 403 response when using asResponse: true", async () => {
+		// When using asResponse: true, should get a proper 403 Response, not throw RangeError
+		const response = await auth.api.createInvitation({
+			body: {
+				email: "someone2@example.com",
+				role: "member",
+				organizationId: org.id,
+			},
+			headers: memberHeaders,
+			asResponse: true,
+		});
+
+		// Should be a Response with status 403, not throw a RangeError
+		expect(response).toBeInstanceOf(Response);
+		expect(response.status).toBe(403);
+	});
+
+	it("should return proper HTTP 403 response when simulating HTTP request (request object)", async () => {
+		// Simulate what happens when the endpoint is called via an actual HTTP request
+		// (which is how Next.js App Router route handlers work)
+		const mockRequest = new Request("http://localhost:3000/api/auth/organization/invite-member", {
+			method: "POST",
+			headers: memberHeaders,
+			body: JSON.stringify({
+				email: "someone3@example.com",
+				role: "member",
+				organizationId: org.id,
+			}),
+		});
+
+		// When passing a request object, shouldReturnResponse should be true
+		// Cast to unknown first since TypeScript doesn't know the runtime return type
+		const response = (await auth.api.createInvitation({
+			body: {
+				email: "someone3@example.com",
+				role: "member",
+				organizationId: org.id,
+			},
+			headers: memberHeaders,
+			request: mockRequest,
+		})) as unknown as Response;
+
+		// Should be a Response with status 403, not throw a RangeError
+		expect(response).toBeInstanceOf(Response);
+		expect(response.status).toBe(403);
+
+		// Verify the response body contains the expected error
+		const body = await response.json();
+		expect(body.code).toBe(
+			ORGANIZATION_ERROR_CODES.YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION.code,
+		);
+	});
+});
