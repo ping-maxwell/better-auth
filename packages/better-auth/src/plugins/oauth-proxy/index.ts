@@ -104,6 +104,14 @@ type PassthroughPayload = {
 	errorURL?: string;
 	disableSignUp?: boolean;
 	timestamp: number;
+	/**
+	 * Link info for account linking operations (from linkSocial).
+	 * When present, the account should be linked to the specified user.
+	 */
+	link?: {
+		userId: string;
+		email: string;
+	};
 };
 
 const oauthProxyQuerySchema = z.object({
@@ -247,6 +255,7 @@ export const oAuthProxy = <O extends OAuthProxyOptions>(opts?: O) => {
 						account: payload.account,
 						callbackURL: payload.callbackURL,
 						disableSignUp: payload.disableSignUp,
+						linkUserId: payload.link?.userId,
 					});
 					if (result.error || !result.data) {
 						ctx.context.logger.error(
@@ -273,7 +282,8 @@ export const oAuthProxy = <O extends OAuthProxyOptions>(opts?: O) => {
 					matcher(context) {
 						return !!(
 							context.path?.startsWith("/sign-in/social") ||
-							context.path?.startsWith("/sign-in/oauth2")
+							context.path?.startsWith("/sign-in/oauth2") ||
+							context.path?.startsWith("/link-social")
 						);
 					},
 					handler: createAuthMiddleware(async (ctx) => {
@@ -470,6 +480,7 @@ export const oAuthProxy = <O extends OAuthProxyOptions>(opts?: O) => {
 								(provider.disableImplicitSignUp && !stateData.requestSignUp) ||
 								provider.options?.disableSignUp,
 							timestamp: Date.now(),
+							link: stateData.link,
 						};
 
 						const encryptedPayload = await symmetricEncrypt({
@@ -490,7 +501,8 @@ export const oAuthProxy = <O extends OAuthProxyOptions>(opts?: O) => {
 					matcher(context) {
 						return !!(
 							context.path?.startsWith("/sign-in/social") ||
-							context.path?.startsWith("/sign-in/oauth2")
+							context.path?.startsWith("/sign-in/oauth2") ||
+							context.path?.startsWith("/link-social")
 						);
 					},
 					handler: createAuthMiddleware(async (ctx) => {

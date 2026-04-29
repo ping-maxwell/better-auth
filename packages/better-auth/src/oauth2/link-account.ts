@@ -17,10 +17,33 @@ export async function handleOAuthUserInfo(
 		disableSignUp?: boolean | undefined;
 		overrideUserInfo?: boolean | undefined;
 		isTrustedProvider?: boolean | undefined;
+		/**
+		 * When provided, the account will be linked to this specific user
+		 * instead of looking up by email. Used by linkSocial through oauth-proxy.
+		 */
+		linkUserId?: string | undefined;
 	},
 ) {
-	const { userInfo, account, callbackURL, disableSignUp, overrideUserInfo } =
-		opts;
+	const {
+		userInfo,
+		account,
+		callbackURL,
+		disableSignUp,
+		overrideUserInfo,
+		linkUserId,
+	} = opts;
+
+	// If linkUserId is provided, this is a linking operation from linkSocial
+	// Link directly to the specified user instead of looking up by email
+	if (linkUserId) {
+		return handleLinkToUser(c, {
+			userInfo,
+			account,
+			linkUserId,
+			isTrustedProvider: opts.isTrustedProvider,
+		});
+	}
+
 	const dbUser = await c.context.internalAdapter
 		.findOAuthUser(
 			userInfo.email.toLowerCase(),
@@ -65,6 +88,7 @@ export async function handleOAuthUserInfo(
 				return {
 					error: "account not linked",
 					data: null,
+					isRegister: false,
 				};
 			}
 			try {
@@ -84,6 +108,7 @@ export async function handleOAuthUserInfo(
 				return {
 					error: "unable to link account",
 					data: null,
+					isRegister: false,
 				};
 			}
 
@@ -246,5 +271,157 @@ export async function handleOAuthUserInfo(
 		},
 		error: null,
 		isRegister,
+	};
+}
+
+/**
+ * Handle linking an OAuth account to a specific user (from linkSocial).
+ * This is used when the linkUserId is provided, typically through oauth-proxy.
+ */
+async function handleLinkToUser(
+	c: GenericEndpointContext,
+	opts: {
+		userInfo: Omit<User, "createdAt" | "updatedAt">;
+		account: Omit<Account, "id" | "userId" | "createdAt" | "updatedAt">;
+		linkUserId: string;
+		isTrustedProvider?: boolean | undefined;
+	},
+) {
+	const { userInfo, account, linkUserId, isTrustedProvider } = opts;
+
+	// Find the user to link to
+	const targetUser = await c.context.internalAdapter.findUserById(linkUserId);
+	if (!targetUser) {
+		logger.error("Link target user not found", { linkUserId });
+		return {
+			error: "user not found",
+			data: null,
+			isRegister: false,
+		};
+	}
+
+	// Check if the account is already linked to this user
+	const existingAccounts =
+		await c.context.internalAdapter.findAccounts(linkUserId);
+	const alreadyLinked = existingAccounts.find(
+		(a) =>
+			a.providerId === account.providerId && a.accountId === account.accountId,
+	);
+
+	if (alreadyLinked) {
+		// Account already linked, just create a session
+		const session = await c.context.internalAdapter.createSession(
+			targetUser.id,
+		);
+		if (!session) {
+			return {
+				error: "unable to create session",
+				data: null,
+				isRegister: false,
+			};
+		}
+		return {
+			data: { session, user: targetUser },
+			error: null,
+			isRegister: false,
+		};
+	}
+
+	// Check if account is already linked to a different user
+	const accountLinkedToOther =
+		await c.context.internalAdapter.findAccountByProviderId(
+			account.accountId,
+			account.providerId,
+		);
+	if (accountLinkedToOther && accountLinkedToOther.userId !== linkUserId) {
+		logger.error("Account already linked to a different user");
+		return {
+			error: "account_already_linked_to_different_user",
+			data: null,
+			isRegister: false,
+		};
+	}
+
+	// Verify linking is allowed
+	const accountLinking = c.context.options.account?.accountLinking;
+	const trusted =
+		isTrustedProvider ||
+		c.context.trustedProviders.includes(account.providerId);
+
+	if (
+		(!trusted && !userInfo.emailVerified) ||
+		accountLinking?.enabled === false
+	) {
+		if (isDevelopment()) {
+			logger.warn(
+				`Cannot link account from ${account.providerId}: provider not trusted and email not verified, or account linking is disabled.`,
+			);
+		}
+		return {
+			error: "account not linked",
+			data: null,
+			isRegister: false,
+		};
+	}
+
+	// Check email policy for linking
+	if (
+		userInfo.email.toLowerCase() !== targetUser.email?.toLowerCase() &&
+		c.context.options.account?.accountLinking?.allowDifferentEmails !== true
+	) {
+		return {
+			error: "email doesn't match",
+			data: null,
+			isRegister: false,
+		};
+	}
+
+	// Link the account
+	try {
+		await c.context.internalAdapter.linkAccount({
+			providerId: account.providerId,
+			accountId: userInfo.id.toString(),
+			userId: linkUserId,
+			accessToken: await setTokenUtil(account.accessToken, c.context),
+			refreshToken: await setTokenUtil(account.refreshToken, c.context),
+			idToken: account.idToken,
+			accessTokenExpiresAt: account.accessTokenExpiresAt,
+			refreshTokenExpiresAt: account.refreshTokenExpiresAt,
+			scope: account.scope,
+		});
+	} catch (e) {
+		logger.error("Unable to link account", e);
+		return {
+			error: "unable to link account",
+			data: null,
+			isRegister: false,
+		};
+	}
+
+	// Update emailVerified if needed
+	if (
+		userInfo.emailVerified &&
+		!targetUser.emailVerified &&
+		userInfo.email.toLowerCase() === targetUser.email?.toLowerCase()
+	) {
+		await c.context.internalAdapter.updateUser(targetUser.id, {
+			emailVerified: true,
+		});
+	}
+
+	// Create session
+	const session = await c.context.internalAdapter.createSession(targetUser.id);
+	if (!session) {
+		return {
+			error: "unable to create session",
+			data: null,
+			isRegister: false,
+		};
+	}
+
+	return {
+		data: { session, user: targetUser },
+		error: null,
+		isRegister: false,
 	};
 }
