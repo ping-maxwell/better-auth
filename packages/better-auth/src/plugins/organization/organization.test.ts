@@ -1901,7 +1901,7 @@ describe("cancel pending invitations on re-invite", async () => {
 		},
 	);
 
-	it("should cancel pending invitations on re-invite", async () => {
+	it("should cancel pending invitations on re-invite with resend flag", async () => {
 		const invite = await client.organization.inviteMember(
 			{
 				organizationId: org.data?.id as string,
@@ -1934,6 +1934,63 @@ describe("cancel pending invitations on re-invite", async () => {
 			listInvitations.data?.filter((invite) => invite.status === "pending")
 				.length,
 		).toBe(1);
+	});
+
+	/**
+	 * @see https://github.com/better-auth/better-auth/issues/9452
+	 */
+	it("should cancel pending invitations on re-invite WITHOUT resend flag", async () => {
+		const invite = await client.organization.inviteMember(
+			{
+				organizationId: org.data?.id as string,
+				email: "test-cancel-reinvite@test.com",
+				role: "member",
+			},
+			{
+				headers,
+			},
+		);
+		expect(invite.data?.status).toBe("pending");
+		const originalInviteId = invite.data?.id;
+
+		const invite2 = await client.organization.inviteMember(
+			{
+				organizationId: org.data?.id as string,
+				email: "test-cancel-reinvite@test.com",
+				role: "admin",
+			},
+			{
+				headers,
+			},
+		);
+
+		expect(invite2.error).toBeNull();
+		expect(invite2.data?.status).toBe("pending");
+		expect(invite2.data?.id).not.toBe(originalInviteId);
+		expect(invite2.data?.role).toBe("admin");
+
+		const listInvitations = await client.organization.listInvitations({
+			fetchOptions: {
+				headers,
+			},
+		});
+
+		const invitationsForEmail = listInvitations.data?.filter(
+			(inv) => inv.email === "test-cancel-reinvite@test.com",
+		);
+		expect(invitationsForEmail?.length).toBe(2);
+
+		const pendingInvitations = invitationsForEmail?.filter(
+			(inv) => inv.status === "pending",
+		);
+		expect(pendingInvitations?.length).toBe(1);
+		expect(pendingInvitations?.[0]?.id).toBe(invite2.data?.id);
+
+		const canceledInvitations = invitationsForEmail?.filter(
+			(inv) => inv.status === "canceled",
+		);
+		expect(canceledInvitations?.length).toBe(1);
+		expect(canceledInvitations?.[0]?.id).toBe(originalInviteId);
 	});
 });
 
