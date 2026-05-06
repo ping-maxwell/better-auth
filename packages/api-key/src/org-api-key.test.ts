@@ -45,6 +45,58 @@ describe("organization API keys", async () => {
 				},
 			);
 
+		/**
+		 * Current implementation requires `userId` (body) or a session even when
+		 * `references` is `organization` and `organizationId` is provided.
+		 *
+		 * @see https://github.com/better-auth/better-auth/issues/8778
+		 */
+		it("server-side createApiKey with organization reference rejects organizationId without userId or session", async () => {
+			const { headers } = await signInWithTestUser();
+
+			const org = await auth.api.createOrganization({
+				body: {
+					name: "Server Only Org Key",
+					slug: `server-only-org-${Date.now()}`,
+				},
+				headers,
+			});
+
+			interface Err {
+				body: {
+					code: string | undefined;
+					message: string | undefined;
+				};
+				status: string;
+				statusCode: number;
+			}
+
+			const res: { data: unknown; error: Err | null } = {
+				data: null,
+				error: null,
+			};
+
+			try {
+				res.data = await auth.api.createApiKey({
+					body: {
+						configId: "org-keys",
+						organizationId: org.id,
+						name: "no-session-key",
+					},
+				});
+			} catch (error: unknown) {
+				res.error = error as Err;
+			}
+
+			expect(res.data).toBeNull();
+			expect(res.error).toBeDefined();
+			expect(res.error?.statusCode).toEqual(401);
+			expect(res.error?.status).toEqual("UNAUTHORIZED");
+			expect(res.error?.body.message).toEqual(
+				ERROR_CODES.UNAUTHORIZED_SESSION.message,
+			);
+		});
+
 		it("organization owner should have full CRUD access to API keys", async () => {
 			const { headers } = await signInWithTestUser();
 
