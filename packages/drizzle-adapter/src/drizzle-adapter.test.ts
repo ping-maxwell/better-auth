@@ -131,4 +131,142 @@ describe("drizzle-adapter", () => {
 			).rejects.toThrow(/Schema not found/);
 		});
 	});
+
+	describe("timestamp mode: string", () => {
+		const defaultSecret = "test-secret-that-is-at-least-32-chars-long!!";
+
+		/**
+		 * @see https://github.com/better-auth/better-auth/issues/7419
+		 */
+		it("should convert Date objects to ISO strings for date fields before inserting", async () => {
+			let capturedValues: Record<string, any> | null = null;
+
+			const userTable = {
+				id: { name: "id" },
+				name: { name: "name" },
+				email: { name: "email" },
+				emailVerified: { name: "emailVerified" },
+				image: { name: "image" },
+				createdAt: { name: "createdAt" },
+				updatedAt: { name: "updatedAt" },
+			};
+
+			const db = {
+				_: { fullSchema: { user: userTable } },
+				insert: vi.fn().mockImplementation(() => ({
+					values: vi.fn().mockImplementation((vals: any) => {
+						capturedValues = vals;
+						return {
+							returning: vi.fn().mockResolvedValue([
+								{
+									id: "1",
+									name: "Test",
+									email: "test@example.com",
+									emailVerified: false,
+									image: null,
+									createdAt: new Date().toISOString(),
+									updatedAt: new Date().toISOString(),
+								},
+							]),
+						};
+					}),
+				})),
+			} as any;
+
+			const factory = drizzleAdapter(db, { provider: "pg" });
+			const adapter = factory({ secret: defaultSecret });
+
+			await adapter.create({
+				model: "user",
+				data: {
+					name: "Test",
+					email: "test@example.com",
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				},
+			});
+
+			expect(capturedValues).not.toBeNull();
+
+			// When users define Drizzle timestamps with { mode: "string" },
+			// Drizzle expects string values, not Date objects.
+			// The adapter should ensure Date values are converted to strings
+			// before they reach Drizzle's insert/values call.
+			expect(capturedValues!.createdAt).not.toBeInstanceOf(Date);
+			expect(capturedValues!.updatedAt).not.toBeInstanceOf(Date);
+			expect(typeof capturedValues!.createdAt).toBe("string");
+			expect(typeof capturedValues!.updatedAt).toBe("string");
+		});
+
+		/**
+		 * @see https://github.com/better-auth/better-auth/issues/7419
+		 */
+		it("should convert Date objects to ISO strings for date fields before updating", async () => {
+			let capturedSetValues: Record<string, any> | null = null;
+
+			const userTable = {
+				id: { name: "id" },
+				name: { name: "name" },
+				email: { name: "email" },
+				emailVerified: { name: "emailVerified" },
+				image: { name: "image" },
+				createdAt: { name: "createdAt" },
+				updatedAt: { name: "updatedAt" },
+			};
+
+			const db = {
+				_: { fullSchema: { user: userTable } },
+				update: vi.fn().mockImplementation(() => ({
+					set: vi.fn().mockImplementation((vals: any) => {
+						capturedSetValues = vals;
+						return {
+							where: vi.fn().mockReturnValue({
+								returning: vi.fn().mockResolvedValue([
+									{
+										id: "1",
+										name: "Test",
+										email: "test@example.com",
+										emailVerified: false,
+										image: null,
+										createdAt: new Date().toISOString(),
+										updatedAt: new Date().toISOString(),
+									},
+								]),
+							}),
+						};
+					}),
+				})),
+				select: vi.fn().mockReturnValue({
+					from: vi.fn().mockReturnValue({
+						where: vi.fn().mockResolvedValue([
+							{
+								id: "1",
+								name: "Test",
+								email: "test@example.com",
+								emailVerified: false,
+								image: null,
+								createdAt: new Date().toISOString(),
+								updatedAt: new Date().toISOString(),
+							},
+						]),
+					}),
+				}),
+			} as any;
+
+			const factory = drizzleAdapter(db, { provider: "pg" });
+			const adapter = factory({ secret: defaultSecret });
+
+			await adapter.update({
+				model: "user",
+				where: [{ field: "id", value: "1" }],
+				update: {
+					updatedAt: new Date(),
+				},
+			});
+
+			expect(capturedSetValues).not.toBeNull();
+			expect(capturedSetValues!.updatedAt).not.toBeInstanceOf(Date);
+			expect(typeof capturedSetValues!.updatedAt).toBe("string");
+		});
+	});
 });
