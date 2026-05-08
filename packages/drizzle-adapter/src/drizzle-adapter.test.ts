@@ -138,7 +138,7 @@ describe("drizzle-adapter", () => {
 		/**
 		 * @see https://github.com/better-auth/better-auth/issues/7419
 		 */
-		it("should convert Date objects to ISO strings for date fields before inserting", async () => {
+		it("should convert Date objects to ISO strings for string-mode timestamp columns on create", async () => {
 			let capturedValues: Record<string, any> | null = null;
 
 			const userTable = {
@@ -147,8 +147,8 @@ describe("drizzle-adapter", () => {
 				email: { name: "email" },
 				emailVerified: { name: "emailVerified" },
 				image: { name: "image" },
-				createdAt: { name: "createdAt" },
-				updatedAt: { name: "updatedAt" },
+				createdAt: { name: "createdAt", dataType: "string" },
+				updatedAt: { name: "updatedAt", dataType: "string" },
 			};
 
 			const db = {
@@ -187,11 +187,6 @@ describe("drizzle-adapter", () => {
 			});
 
 			expect(capturedValues).not.toBeNull();
-
-			// When users define Drizzle timestamps with { mode: "string" },
-			// Drizzle expects string values, not Date objects.
-			// The adapter should ensure Date values are converted to strings
-			// before they reach Drizzle's insert/values call.
 			expect(capturedValues!.createdAt).not.toBeInstanceOf(Date);
 			expect(capturedValues!.updatedAt).not.toBeInstanceOf(Date);
 			expect(typeof capturedValues!.createdAt).toBe("string");
@@ -201,7 +196,7 @@ describe("drizzle-adapter", () => {
 		/**
 		 * @see https://github.com/better-auth/better-auth/issues/7419
 		 */
-		it("should convert Date objects to ISO strings for date fields before updating", async () => {
+		it("should convert Date objects to ISO strings for string-mode timestamp columns on update", async () => {
 			let capturedSetValues: Record<string, any> | null = null;
 
 			const userTable = {
@@ -210,8 +205,8 @@ describe("drizzle-adapter", () => {
 				email: { name: "email" },
 				emailVerified: { name: "emailVerified" },
 				image: { name: "image" },
-				createdAt: { name: "createdAt" },
-				updatedAt: { name: "updatedAt" },
+				createdAt: { name: "createdAt", dataType: "string" },
+				updatedAt: { name: "updatedAt", dataType: "string" },
 			};
 
 			const db = {
@@ -267,6 +262,60 @@ describe("drizzle-adapter", () => {
 			expect(capturedSetValues).not.toBeNull();
 			expect(capturedSetValues!.updatedAt).not.toBeInstanceOf(Date);
 			expect(typeof capturedSetValues!.updatedAt).toBe("string");
+		});
+
+		it("should preserve Date objects for date-mode timestamp columns (e.g. SQLite integer timestamp_ms)", async () => {
+			let capturedValues: Record<string, any> | null = null;
+
+			const userTable = {
+				id: { name: "id" },
+				name: { name: "name" },
+				email: { name: "email" },
+				emailVerified: { name: "emailVerified" },
+				image: { name: "image" },
+				createdAt: { name: "createdAt", dataType: "date" },
+				updatedAt: { name: "updatedAt", dataType: "date" },
+			};
+
+			const db = {
+				_: { fullSchema: { user: userTable } },
+				insert: vi.fn().mockImplementation(() => ({
+					values: vi.fn().mockImplementation((vals: any) => {
+						capturedValues = vals;
+						return {
+							returning: vi.fn().mockResolvedValue([
+								{
+									id: "1",
+									name: "Test",
+									email: "test@example.com",
+									emailVerified: false,
+									image: null,
+									createdAt: new Date(),
+									updatedAt: new Date(),
+								},
+							]),
+						};
+					}),
+				})),
+			} as any;
+
+			const factory = drizzleAdapter(db, { provider: "sqlite" });
+			const adapter = factory({ secret: defaultSecret });
+
+			const now = new Date();
+			await adapter.create({
+				model: "user",
+				data: {
+					name: "Test",
+					email: "test@example.com",
+					createdAt: now,
+					updatedAt: now,
+				},
+			});
+
+			expect(capturedValues).not.toBeNull();
+			expect(capturedValues!.createdAt).toBeInstanceOf(Date);
+			expect(capturedValues!.updatedAt).toBeInstanceOf(Date);
 		});
 	});
 });
