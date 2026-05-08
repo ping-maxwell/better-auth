@@ -3,6 +3,7 @@ import { createAuthMiddleware } from "@better-auth/core/api";
 import { setShouldSkipSessionRefresh } from "../api/state/should-session-refresh";
 import { parseSetCookieHeader, toCookieOptions } from "../cookies";
 import { PACKAGE_VERSION } from "../version";
+import { warnIfCookiePluginNotLast } from "./cookie-plugin-guard";
 
 export function toNextJsHandler(
 	auth:
@@ -24,6 +25,8 @@ export function toNextJsHandler(
 }
 
 export const nextCookies = () => {
+	let hasWarned = false;
+
 	return {
 		id: "next-cookies",
 		version: PACKAGE_VERSION,
@@ -34,8 +37,10 @@ export const nextCookies = () => {
 						return ctx.path === "/get-session";
 					},
 					handler: createAuthMiddleware(async (ctx) => {
-						// Real HTTP requests (via router) set cookies through
-						// response headers -- no need to skip refresh.
+						if (!hasWarned) {
+							warnIfCookiePluginNotLast(ctx.context, "next-cookies");
+							hasWarned = true;
+						}
 						if ("_flag" in ctx && ctx._flag === "router") {
 							return;
 						}
@@ -49,14 +54,26 @@ export const nextCookies = () => {
 							return;
 						}
 						/**
-						 * Detect RSC via headers, NOT by probing cookies().set().
-						 * In Next.js, cookies().set() unconditionally triggers router
-						 * cache invalidation -- even if the value is unchanged.
+						 * Skip session refresh for RSC flight requests where the
+						 * cookie writes can never reach the client.
 						 *
-						 * RSC sends `RSC: 1` without `next-action`. Only in that
-						 * context cookies cannot be written -- skip session refresh
-						 * to avoid DB/cookie mismatch.
+						 * RSC flights carry `RSC: 1` without `next-action`. In
+						 * this context cookies().set() either throws, silently
+						 * triggers router cache invalidation, or stalls the SSR
+						 * stream depending on the Next.js version. Skipping
+						 * avoids a DB/cookie mismatch.
 						 *
+						 * Initial SSR (no `RSC` header) also can't write cookies
+						 * from Server Components, but we can't distinguish it
+						 * from Route Handler auth.api.* calls here. The after
+						 * hook handles that case by gating cookie forwarding on
+						 * the `next-action` header.
+						 *
+						 * Detection uses headers instead of probing
+						 * cookies().set(), because the probe unconditionally
+						 * triggers Next.js router cache invalidation.
+						 *
+						 * @see https://github.com/better-auth/better-auth/issues/9360
 						 * @see https://github.com/vercel/next.js/blob/8c5af211d580/packages/next/src/server/web/spec-extension/adapters/request-cookies.ts#L112-L157
 						 */
 						const isRSC = headersStore.get("RSC") === "1";
@@ -80,6 +97,40 @@ export const nextCookies = () => {
 						if (returned instanceof Headers) {
 							const setCookies = returned?.get("set-cookie");
 							if (!setCookies) return;
+
+							/**
+							 * Determine whether cookies().set() is safe in the
+							 * current rendering context before attempting writes.
+							 *
+							 * Only Server Actions (identified by the `next-action`
+							 * header) can safely mutate cookies via the Next.js
+							 * cookie store. In Server Components — both RSC flight
+							 * requests (`RSC: 1`) and initial SSR (no distinguishing
+							 * header) — calling cookies().set() can silently trigger
+							 * router cache invalidation or stall the SSR streaming
+							 * pipeline, depending on the Next.js version.
+							 *
+							 * HTTP requests through the router (`_flag === "router"`)
+							 * are already handled above; they set cookies directly
+							 * on the HTTP response.
+							 *
+							 * @see https://github.com/better-auth/better-auth/issues/9360
+							 * @see https://nextjs.org/docs/app/api-reference/functions/cookies
+							 */
+							let headersStore: Awaited<
+								ReturnType<typeof import("next/headers.js").headers>
+							>;
+							try {
+								const { headers } = await import("next/headers.js");
+								headersStore = await headers();
+							} catch {
+								return;
+							}
+							const isServerAction = !!headersStore.get("next-action");
+							if (!isServerAction) {
+								return;
+							}
+
 							const parsed = parseSetCookieHeader(setCookies);
 							let cookieHelper: Awaited<
 								ReturnType<typeof import("next/headers.js").cookies>
