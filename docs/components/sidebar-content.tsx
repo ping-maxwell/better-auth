@@ -2806,8 +2806,8 @@ C0.7,239.6,62.1,0.5,62.2,0.4c0,0,54,13.8,119.9,30.8S302.1,62,302.2,62c0.2,0,0.2,
 						href: "/docs/reference/errors/email_not_found",
 					},
 					{
-						title: "email_doesn't_match",
-						href: "/docs/reference/errors/email_doesn't_match",
+						title: "email_does_not_match",
+						href: "/docs/reference/errors/email_does_not_match",
 					},
 					{
 						title: "unable_to_get_user_info",
