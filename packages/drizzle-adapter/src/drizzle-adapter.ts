@@ -852,6 +852,16 @@ export const drizzleAdapter = (db: DB, config: DrizzleAdapterConfig) => {
 					? true
 					: false,
 			supportsArrays: config.provider === "pg" ? true : false,
+			customTransformInput: ({ data, fieldAttributes }) => {
+				// Drizzle timestamps can be configured with { mode: "string" },
+				// in which case Drizzle expects ISO string values, not Date instances.
+				// Since we can't detect the column mode at runtime, always serialize
+				// Date values — Drizzle handles ISO strings for all timestamp modes.
+				if (fieldAttributes.type === "date" && data instanceof Date) {
+					return data.toISOString();
+				}
+				return data;
+			},
 			customTransformOutput: ({ data, fieldAttributes }) => {
 				// not all providers support dates
 				// one such example case is https://github.com/better-auth/better-auth/issues/7819
