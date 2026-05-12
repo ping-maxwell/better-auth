@@ -380,7 +380,9 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 						return (
 							context.path === "/sign-in/email" ||
 							context.path === "/sign-in/username" ||
-							context.path === "/sign-in/phone-number"
+							context.path === "/sign-in/phone-number" ||
+							context.path === "/sign-in/email-otp" ||
+							context.path === "/magic-link/verify"
 						);
 					},
 					handler: createAuthMiddleware(async (ctx) => {

@@ -2352,10 +2352,9 @@ describe("twoFactorMethods in sign-in response", () => {
 /**
  * @see https://github.com/better-auth/better-auth/pull/9205
  *
- * 2FA enforcement is intentionally scoped to credential sign-in paths
- * only. These tests lock that scope in so a future refactor does not
- * accidentally broaden enforcement to non-credential sign-in flows
- * without a dedicated release.
+ * 2FA enforcement now covers magic-link and email-OTP sign-in paths
+ * in addition to credential-based paths. Non-sign-in endpoints should
+ * remain unaffected.
  */
 describe("2FA enforcement scope", async () => {
 	let magicLinkURL = "";
@@ -2376,7 +2375,7 @@ describe("2FA enforcement scope", async () => {
 		],
 	});
 
-	it("should not challenge 2FA on magic-link sign-in", async () => {
+	it("should challenge 2FA on magic-link sign-in", async () => {
 		const { headers } = await signInWithTestUser();
 		await auth.api.enableTwoFactor({
 			body: { password: testUser.password },
@@ -2399,7 +2398,7 @@ describe("2FA enforcement scope", async () => {
 		});
 
 		const json = await verifyRes.json();
-		expect(json.twoFactorRedirect).toBeUndefined();
+		expect(json.twoFactorRedirect).toBe(true);
 	});
 
 	it("should not challenge 2FA on authenticated non-sign-in endpoints", async () => {
