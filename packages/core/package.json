@@ -100,14 +100,16 @@
       "default": "./dist/oauth2/index.mjs"
     },
     "./instrumentation": {
+      "//": "Edge/workerd/browser conditions MUST come before node/deno/bun. Export conditions are matched in definition order (first match wins). Vite SSR adds 'node' to its condition set by default, so if 'node' appeared first it would always win — even when 'workerd' is also active. See https://github.com/better-auth/better-auth/issues/9550",
       "dev-source": "./src/instrumentation/index.ts",
       "types": "./dist/instrumentation/index.d.mts",
+      "workerd": "./dist/instrumentation/pure.index.mjs",
+      "edge": "./dist/instrumentation/pure.index.mjs",
+      "browser": "./dist/instrumentation/pure.index.mjs",
       "node": "./dist/instrumentation/index.mjs",
       "deno": "./dist/instrumentation/index.mjs",
       "bun": "./dist/instrumentation/index.mjs",
-      "edge": "./dist/instrumentation/pure.index.mjs",
-      "workerd": "./dist/instrumentation/pure.index.mjs",
-      "browser": "./dist/instrumentation/pure.index.mjs",
+      "import": "./dist/instrumentation/index.mjs",
       "default": "./dist/instrumentation/index.mjs"
     }
   },
