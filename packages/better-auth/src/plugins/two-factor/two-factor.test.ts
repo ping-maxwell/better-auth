@@ -8,6 +8,7 @@ import { convertSetCookieToCookie } from "../../test-utils/headers";
 import { getTestInstance } from "../../test-utils/test-instance";
 import { DEFAULT_SECRET } from "../../utils/constants";
 import { anonymous } from "../anonymous";
+import { emailOTP } from "../email-otp";
 import { magicLink } from "../magic-link";
 import { TWO_FACTOR_ERROR_CODES, twoFactor, twoFactorClient } from ".";
 import type { TwoFactorTable, UserWithTwoFactor } from "./types";
@@ -2557,4 +2558,165 @@ describe("backup codes storage configurations", () => {
 			);
 		});
 	}
+});
+
+/**
+ * @see https://github.com/better-auth/better-auth/issues/9552
+ *
+ * The two-factor hook matcher only intercepts credential sign-in paths
+ * (/sign-in/email, /sign-in/username, /sign-in/phone-number).
+ * Email-OTP and magic-link sign-ins bypass 2FA entirely even when
+ * user.twoFactorEnabled is true.
+ */
+describe("2FA bypass via email-otp sign-in", async () => {
+	let emailOtp = "";
+
+	const { auth, signInWithTestUser, testUser } = await getTestInstance({
+		secret: DEFAULT_SECRET,
+		plugins: [
+			twoFactor({
+				otpOptions: {
+					sendOTP() {},
+				},
+				skipVerificationOnEnable: true,
+			}),
+			emailOTP({
+				async sendVerificationOTP({ otp }) {
+					emailOtp = otp;
+				},
+			}),
+		],
+	});
+
+	it("should gate email-otp sign-in with 2FA when twoFactorEnabled is true", async () => {
+		const { headers } = await signInWithTestUser();
+
+		const enableRes = await auth.api.enableTwoFactor({
+			body: { password: testUser.password },
+			headers,
+			asResponse: true,
+		});
+		const enableHeaders = convertSetCookieToCookie(enableRes.headers);
+		const session = await auth.api.getSession({ headers: enableHeaders });
+		expect(session?.user.twoFactorEnabled).toBe(true);
+
+		await auth.api.sendVerificationOTP({
+			body: { email: testUser.email, type: "sign-in" },
+		});
+
+		const signInRes = await auth.api.signInEmailOTP({
+			body: { email: testUser.email, otp: emailOtp },
+			asResponse: true,
+		});
+		const json = await signInRes.json();
+		const setCookie = signInRes.headers.get("set-cookie") || "";
+		const parsed = parseSetCookieHeader(setCookie);
+
+		/**
+		 * BUG: A full session is issued, bypassing 2FA entirely.
+		 * Expected: twoFactorRedirect: true, session cookie cleared,
+		 * two_factor cookie set.
+		 */
+		expect(json.twoFactorRedirect).toBe(true);
+		expect(parsed.get("better-auth.session_token")?.value).toBe("");
+		expect(parsed.get("better-auth.two_factor")?.value).toBeDefined();
+	});
+
+	it("email-otp sign-in should not gate 2FA when twoFactorEnabled is false", async () => {
+		const {
+			auth: freshAuth,
+			testUser: freshUser,
+		} = await getTestInstance({
+			secret: DEFAULT_SECRET,
+			plugins: [
+				twoFactor({
+					otpOptions: { sendOTP() {} },
+				}),
+				emailOTP({
+					async sendVerificationOTP({ otp }) {
+						emailOtp = otp;
+					},
+				}),
+			],
+		});
+
+		await freshAuth.api.sendVerificationOTP({
+			body: { email: freshUser.email, type: "sign-in" },
+		});
+
+		const signInRes = await freshAuth.api.signInEmailOTP({
+			body: { email: freshUser.email, otp: emailOtp },
+			asResponse: true,
+		});
+		const json = await signInRes.json();
+
+		expect(json.twoFactorRedirect).toBeUndefined();
+		expect(json.token).toBeDefined();
+	});
+});
+
+/**
+ * @see https://github.com/better-auth/better-auth/issues/9552
+ *
+ * Same issue as email-otp: /magic-link/verify creates a session via
+ * setSessionCookie but the two-factor after-hook does not match that path.
+ */
+describe("2FA bypass via magic-link verify", async () => {
+	let magicLinkURL = "";
+
+	const { auth, signInWithTestUser, testUser } = await getTestInstance({
+		secret: DEFAULT_SECRET,
+		plugins: [
+			twoFactor({
+				otpOptions: {
+					sendOTP() {},
+				},
+				skipVerificationOnEnable: true,
+			}),
+			magicLink({
+				sendMagicLink({ url }) {
+					magicLinkURL = url;
+				},
+			}),
+		],
+	});
+
+	it("should gate magic-link verify with 2FA when twoFactorEnabled is true", async () => {
+		const { headers } = await signInWithTestUser();
+
+		const enableRes = await auth.api.enableTwoFactor({
+			body: { password: testUser.password },
+			headers,
+			asResponse: true,
+		});
+		const enableHeaders = convertSetCookieToCookie(enableRes.headers);
+		const session = await auth.api.getSession({ headers: enableHeaders });
+		expect(session?.user.twoFactorEnabled).toBe(true);
+
+		await auth.api.signInMagicLink({
+			body: { email: testUser.email },
+			headers: new Headers(),
+		});
+
+		const url = new URL(magicLinkURL);
+		const token = url.searchParams.get("token")!;
+
+		const verifyRes = await auth.api.magicLinkVerify({
+			query: { token },
+			headers: new Headers(),
+			asResponse: true,
+		});
+		const json = await verifyRes.json();
+		const setCookie = verifyRes.headers.get("set-cookie") || "";
+		const parsed = parseSetCookieHeader(setCookie);
+
+		/**
+		 * BUG: A full session is issued, bypassing 2FA entirely.
+		 * Expected: twoFactorRedirect: true, session cookie cleared,
+		 * two_factor cookie set.
+		 */
+		expect(json.twoFactorRedirect).toBe(true);
+		expect(parsed.get("better-auth.session_token")?.value).toBe("");
+		expect(parsed.get("better-auth.two_factor")?.value).toBeDefined();
+	});
 });
