@@ -32,6 +32,7 @@ export const signUpEmail = <O extends BetterAuthOptions>() =>
 			operationId: "signUpWithEmailAndPassword",
 			use: [formCsrfMiddleware],
 			body: signUpEmailBodySchema,
+			cloneRequest: true,
 			metadata: {
 				allowedMediaTypes: [
 					"application/x-www-form-urlencoded",
@@ -177,18 +178,18 @@ export const signUpEmail = <O extends BetterAuthOptions>() =>
 				},
 			},
 		},
-		async (ctx) => {
-			return runWithTransaction(ctx.context.adapter, async () => {
-				if (
-					!ctx.context.options.emailAndPassword?.enabled ||
-					ctx.context.options.emailAndPassword?.disableSignUp
-				) {
-					throw APIError.from("BAD_REQUEST", {
-						message: "Email and password sign up is not enabled",
-						code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
-					});
-				}
-				const body = ctx.body as any as User & {
+	async (ctx) => {
+		return runWithTransaction(ctx.context.adapter, async () => {
+			if (
+				!ctx.context.options.emailAndPassword?.enabled ||
+				ctx.context.options.emailAndPassword?.disableSignUp
+			) {
+				throw APIError.from("BAD_REQUEST", {
+					message: "Email and password sign up is not enabled",
+					code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
+				});
+			}
+			const body = ctx.body as any as User & {
 					password: string;
 					callbackURL?: string | undefined;
 					rememberMe?: boolean | undefined;
@@ -255,14 +256,14 @@ export const signUpEmail = <O extends BetterAuthOptions>() =>
 						 * between existing and non-existing emails.
 						 */
 						await ctx.context.password.hash(password);
-						if (ctx.context.options.emailAndPassword?.onExistingUserSignUp) {
-							await ctx.context.runInBackgroundOrAwait(
-								ctx.context.options.emailAndPassword.onExistingUserSignUp(
-									{ user: dbUser.user },
-									ctx.request,
-								),
-							);
-						}
+					if (ctx.context.options.emailAndPassword?.onExistingUserSignUp) {
+						await ctx.context.runInBackgroundOrAwait(
+							ctx.context.options.emailAndPassword.onExistingUserSignUp(
+								{ user: dbUser.user },
+								ctx.request?.clone(),
+							),
+						);
+					}
 						const now = new Date();
 						const generatedId =
 							ctx.context.generateId({ model: "user" }) || generateId();
@@ -380,18 +381,18 @@ export const signUpEmail = <O extends BetterAuthOptions>() =>
 						: encodeURIComponent("/");
 					const url = `${ctx.context.baseURL}/verify-email?token=${token}&callbackURL=${callbackURL}`;
 
-					if (ctx.context.options.emailVerification?.sendVerificationEmail) {
-						await ctx.context.runInBackgroundOrAwait(
-							ctx.context.options.emailVerification.sendVerificationEmail(
-								{
-									user: createdUser,
-									url,
-									token,
-								},
-								ctx.request,
-							),
-						);
-					}
+				if (ctx.context.options.emailVerification?.sendVerificationEmail) {
+					await ctx.context.runInBackgroundOrAwait(
+						ctx.context.options.emailVerification.sendVerificationEmail(
+							{
+								user: createdUser,
+								url,
+								token,
+							},
+							ctx.request?.clone(),
+						),
+					);
+				}
 				}
 
 				if (shouldSkipAutoSignIn) {

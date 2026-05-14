@@ -365,6 +365,7 @@ export const signInEmail = <O extends BetterAuthOptions>() =>
 			method: "POST",
 			operationId: "signInEmail",
 			use: [formCsrfMiddleware],
+			cloneRequest: true,
 			body: z.object({
 				/**
 				 * Email of the user
@@ -461,24 +462,24 @@ export const signInEmail = <O extends BetterAuthOptions>() =>
 				},
 			},
 		},
-		async (
-			ctx,
-		): Promise<{
-			redirect: boolean;
-			token: string;
-			url?: string | undefined;
-			user: User<O["user"], O["plugins"]>;
-		}> => {
-			if (!ctx.context.options?.emailAndPassword?.enabled) {
-				ctx.context.logger.error(
-					"Email and password is not enabled. Make sure to enable it in the options on you `auth.ts` file. Check `https://better-auth.com/docs/authentication/email-password` for more!",
-				);
-				throw APIError.from("BAD_REQUEST", {
-					code: "EMAIL_PASSWORD_DISABLED",
-					message: "Email and password is not enabled",
-				});
-			}
-			const { email, password } = ctx.body;
+	async (
+		ctx,
+	): Promise<{
+		redirect: boolean;
+		token: string;
+		url?: string | undefined;
+		user: User<O["user"], O["plugins"]>;
+	}> => {
+		if (!ctx.context.options?.emailAndPassword?.enabled) {
+			ctx.context.logger.error(
+				"Email and password is not enabled. Make sure to enable it in the options on you `auth.ts` file. Check `https://better-auth.com/docs/authentication/email-password` for more!",
+			);
+			throw APIError.from("BAD_REQUEST", {
+				code: "EMAIL_PASSWORD_DISABLED",
+				message: "Email and password is not enabled",
+			});
+		}
+		const { email, password } = ctx.body;
 			const isValidEmail = z.email().safeParse(email);
 			if (!isValidEmail.success) {
 				throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.INVALID_EMAIL);
@@ -549,16 +550,16 @@ export const signInEmail = <O extends BetterAuthOptions>() =>
 						? encodeURIComponent(ctx.body.callbackURL)
 						: encodeURIComponent("/");
 					const url = `${ctx.context.baseURL}/verify-email?token=${token}&callbackURL=${callbackURL}`;
-					await ctx.context.runInBackgroundOrAwait(
-						ctx.context.options.emailVerification.sendVerificationEmail(
-							{
-								user: user.user,
-								url,
-								token,
-							},
-							ctx.request,
-						),
-					);
+				await ctx.context.runInBackgroundOrAwait(
+					ctx.context.options.emailVerification.sendVerificationEmail(
+						{
+							user: user.user,
+							url,
+							token,
+						},
+						ctx.request?.clone(),
+					),
+				);
 				}
 
 				throw APIError.from("FORBIDDEN", BASE_ERROR_CODES.EMAIL_NOT_VERIFIED);
