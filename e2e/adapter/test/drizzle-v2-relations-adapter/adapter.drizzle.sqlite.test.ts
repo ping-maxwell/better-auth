@@ -25,12 +25,12 @@ let sqliteDB = new Database(dbFilePath);
 const { execute } = await testAdapter({
 	adapter: async (options) => {
 		const { schema } = await generateDrizzleSchema(sqliteDB, options, "sqlite");
-		const { relations, ...schemas } = schema;
+		const { authRelations, ...schemas } = schema;
 		return drizzleAdapter(
-			drizzle({ client: sqliteDB, schema: schemas, relations }),
+			drizzle({ client: sqliteDB, schema: schemas, relations: authRelations }),
 			{
 				debugLogs: { isRunningAdapterTests: true },
-				schema: { ...schemas, relations },
+				schema: { ...schemas, authRelations },
 				provider: "sqlite",
 			},
 		);

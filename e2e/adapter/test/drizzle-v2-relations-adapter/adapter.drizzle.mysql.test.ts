@@ -24,12 +24,12 @@ const mysqlDB = createPool({
 const { execute } = await testAdapter({
 	adapter: async (options) => {
 		const { schema } = await generateDrizzleSchema(mysqlDB, options, "mysql");
-		const { relations, ...schema1 } = schema;
+		const { authRelations, ...schema1 } = schema;
 		const drizzleI2 = drizzle({
 			client: mysqlDB,
 			mode: "default",
 			schema: schema1,
-			relations: relations,
+			relations: authRelations,
 		});
 		return drizzleAdapter(drizzleI2, {
 			debugLogs: { isRunningAdapterTests: true },

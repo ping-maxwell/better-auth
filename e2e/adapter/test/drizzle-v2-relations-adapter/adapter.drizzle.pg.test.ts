@@ -32,16 +32,16 @@ const cleanupDatabase = async (shouldDestroy = false) => {
 const { execute } = await testAdapter({
 	adapter: async (options) => {
 		const { schema } = await generateDrizzleSchema(pgDB, options, "pg");
-		const { relations, ...schemas } = schema;
+		const { authRelations, ...schemas } = schema;
 		return drizzleAdapter(
 			drizzle({
 				client: pgDB,
-				relations,
+				relations: authRelations,
 				schema: schemas,
 			}),
 			{
 				debugLogs: { isRunningAdapterTests: true },
-				schema: { ...schemas, relations },
+				schema: { ...schemas, authRelations },
 				provider: "pg",
 			},
 		);

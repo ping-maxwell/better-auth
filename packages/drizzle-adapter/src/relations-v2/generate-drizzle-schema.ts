@@ -475,7 +475,7 @@ export const generateDrizzleSchema: SchemaGenerator = async ({
 		}
 
 		if (relationsEntries.length > 0) {
-			relationsString = `\n\nexport const relations = defineRelations(${schemaObject}, (r) => ({\n${relationsEntries.join(",\n")}\n}));\n`;
+			relationsString = `\n\nexport const authRelations = defineRelationsPart(${schemaObject}, (r) => ({\n${relationsEntries.join(",\n")}\n}));\n`;
 		}
 	}
 
@@ -515,7 +515,7 @@ function generateImport({
 	tables: BetterAuthDBSchema;
 	options: BetterAuthOptions;
 }) {
-	const rootImports: string[] = ["defineRelations"];
+	const rootImports: string[] = ["defineRelationsPart"];
 	const coreImports: string[] = [];
 
 	let hasBigint = false;

@@ -216,14 +216,17 @@ And apply the new relations to your drizzle instance:
 
 ```ts
 import { drizzle } from 'drizzle-orm/...';
-import * as schemas from './schema.ts';
+import { authRelations } from './auth-schema.ts';
 
-const { relations, ...schema } = schemas;
+// your app's main relations which should use defineRelations
+import { relations } from './app-schema';
 
 export const db = drizzle({
 	client,
-	schema, // [!code highlight]
-	relations, // [!code highlight]
+	// authRelations uses defineRelationsPart,
+	// so it must come after the main relations.
+	// https://orm.drizzle.team/docs/relations-v1-v2#relations-parts
+	relations: { ...relations, ...authRelations }, // [!code highlight]
 });
 ```
 
