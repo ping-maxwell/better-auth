@@ -1331,3 +1331,170 @@ describe("response headers on APIError", async () => {
 		expect(setCookies.some((c) => c.startsWith("session_data="))).toBe(true);
 	});
 });
+
+/**
+ * @see https://github.com/better-auth/better-auth/issues/9012
+ *
+ * When two copies of `better-call` exist in a pnpm workspace (due to different
+ * zod peer dependency resolutions), the `instanceof APIError` check would fail
+ * because the APIError class from one copy is a different class identity.
+ *
+ * This caused after-hooks to be silently skipped for redirect-based endpoints
+ * (/magic-link/verify, /callback/{provider}, etc.) because the error was
+ * re-thrown instead of being caught and processed.
+ *
+ * The fix is to use `isAPIError()` which performs a three-layer check:
+ * 1. `error instanceof BaseAPIError` (from better-call)
+ * 2. `error instanceof APIError` (from @better-auth/core/error)
+ * 3. `(error as { name?: string })?.name === "APIError"` (fallback check by name)
+ *
+ * These tests validate that after-hooks are correctly invoked for redirect-based
+ * endpoints, ensuring the fix is working properly.
+ */
+describe("after-hooks with redirect-based endpoints (issue #9012)", async () => {
+	describe("after-hooks should run for endpoints that throw redirect APIErrors", () => {
+		it("should invoke after-hook when endpoint throws redirect APIError", async () => {
+			let afterHookCalled = false;
+
+			const endpoints = {
+				redirectEndpoint: createAuthEndpoint(
+					"/redirect-test",
+					{ method: "GET" },
+					async (c) => {
+						throw new APIError(
+							"FOUND",
+							{ message: "redirect" },
+							{ location: "/callback" },
+						);
+					},
+				),
+			};
+
+			const authContext = init({
+				hooks: {
+					after: createAuthMiddleware(async (c) => {
+						afterHookCalled = true;
+						if (isAPIError(c.context.returned)) {
+							c.setHeader("x-after-hook-ran", "true");
+						}
+					}),
+				},
+			});
+
+			const api = toAuthEndpoints(endpoints, authContext);
+
+			const response = await api.redirectEndpoint({ asResponse: true });
+			expect(response.status).toBe(302);
+			expect(response.headers.get("location")).toBe("/callback");
+			expect(afterHookCalled).toBe(true);
+			expect(response.headers.get("x-after-hook-ran")).toBe("true");
+		});
+
+		it("should invoke after-hook and allow response modification for redirect responses", async () => {
+			const endpoints = {
+				redirectWithModification: createAuthEndpoint(
+					"/redirect-modify",
+					{ method: "GET" },
+					async (c) => {
+						c.setCookie("pre-redirect", "value");
+						throw new APIError(
+							"FOUND",
+							{ message: "redirect" },
+							{ location: "/destination" },
+						);
+					},
+				),
+			};
+
+			const authContext = init({
+				hooks: {
+					after: createAuthMiddleware(async (c) => {
+						c.setCookie("after-hook-cookie", "after-value");
+					}),
+				},
+			});
+
+			const api = toAuthEndpoints(endpoints, authContext);
+
+			const response = await api.redirectWithModification({ asResponse: true });
+			expect(response.status).toBe(302);
+
+			const setCookie = response.headers.get("set-cookie") ?? "";
+			expect(setCookie).toContain("pre-redirect=value");
+			expect(setCookie).toContain("after-hook-cookie=after-value");
+		});
+
+		it("should invoke multiple after-hooks in order for redirect endpoints", async () => {
+			const hookOrder: string[] = [];
+
+			const endpoints = {
+				multiHookRedirect: createAuthEndpoint(
+					"/multi-hook-redirect",
+					{ method: "GET" },
+					async (c) => {
+						throw new APIError(
+							"FOUND",
+							{ message: "redirect" },
+							{ location: "/final" },
+						);
+					},
+				),
+			};
+
+			const authContext = init({
+				plugins: [
+					{
+						id: "test-plugin",
+						hooks: {
+							after: [
+								{
+									matcher: () => true,
+									handler: createAuthMiddleware(async () => {
+										hookOrder.push("plugin-after");
+									}),
+								},
+							],
+						},
+					},
+				],
+				hooks: {
+					after: createAuthMiddleware(async () => {
+						hookOrder.push("user-after");
+					}),
+				},
+			});
+
+			const api = toAuthEndpoints(endpoints, authContext);
+
+			const response = await api.multiHookRedirect({ asResponse: true });
+			expect(response.status).toBe(302);
+			expect(hookOrder).toEqual(["user-after", "plugin-after"]);
+		});
+	});
+
+	describe("isAPIError correctly identifies APIError-like objects", () => {
+		it("should identify APIError by name property when instanceof fails", () => {
+			// Simulate a cross-module APIError (from a different better-call copy)
+			const crossModuleError = {
+				name: "APIError",
+				message: "redirect",
+				statusCode: 302,
+			};
+
+			expect(crossModuleError instanceof APIError).toBe(false);
+			expect(isAPIError(crossModuleError)).toBe(true);
+		});
+
+		it("should correctly identify actual APIError instances", () => {
+			const apiError = new APIError("BAD_REQUEST", { message: "test" });
+			expect(isAPIError(apiError)).toBe(true);
+		});
+
+		it("should reject non-APIError objects", () => {
+			expect(isAPIError({ name: "Error", message: "test" })).toBe(false);
+			expect(isAPIError(new Error("test"))).toBe(false);
+			expect(isAPIError(null)).toBe(false);
+			expect(isAPIError(undefined)).toBe(false);
+		});
+	});
+});
