@@ -4,6 +4,130 @@ import { inferAdditionalFields } from "../../client/plugins";
 import { getTestInstance } from "../../test-utils/test-instance";
 import type { Account, Session } from "../../types";
 
+/**
+ * @see https://github.com/better-auth/better-auth/issues/7155
+ */
+describe("updateUser with array fields", async () => {
+	const { client, sessionSetter, customFetchImpl, auth } =
+		await getTestInstance({
+			user: {
+				additionalFields: {
+					organizationType: {
+						type: "string[]",
+						input: true,
+						required: false,
+					},
+					tags: {
+						type: "number[]",
+						input: true,
+						required: false,
+					},
+				},
+			},
+		});
+
+	const authClient = createAuthClient({
+		baseURL: "http://localhost:3000",
+		fetchOptions: {
+			customFetchImpl,
+		},
+		plugins: [
+			inferAdditionalFields({
+				user: {
+					organizationType: {
+						type: "string[]",
+						required: false,
+					},
+					tags: {
+						type: "number[]",
+						required: false,
+					},
+				},
+			}),
+		],
+	});
+
+	it("should update array fields on user", async () => {
+		const headers = new Headers();
+		await authClient.signUp.email({
+			email: "array-test@email.com",
+			name: "Array Test User",
+			password: "password123",
+			organizationType: ["media", "research"],
+			tags: [1, 2, 3],
+			fetchOptions: {
+				onSuccess: sessionSetter(headers),
+			},
+		});
+
+		const initialSession = await authClient.getSession({
+			fetchOptions: {
+				headers,
+				throw: true,
+			},
+		});
+		expect(initialSession).not.toBeNull();
+		expect(initialSession!.user.organizationType).toEqual([
+			"media",
+			"research",
+		]);
+		expect(initialSession!.user.tags).toEqual([1, 2, 3]);
+
+		const updateRes = await authClient.updateUser({
+			organizationType: ["other", "media", "research"],
+			tags: [4, 5, 6],
+			fetchOptions: {
+				headers,
+			},
+		});
+		expect(updateRes.data?.status).toBe(true);
+
+		const updatedSession = await authClient.getSession({
+			fetchOptions: {
+				headers,
+				throw: true,
+			},
+		});
+		expect(updatedSession).not.toBeNull();
+		expect(updatedSession!.user.organizationType).toEqual([
+			"other",
+			"media",
+			"research",
+		]);
+		expect(updatedSession!.user.tags).toEqual([4, 5, 6]);
+	});
+
+	it("should handle empty arrays", async () => {
+		const headers = new Headers();
+		await authClient.signUp.email({
+			email: "empty-array@email.com",
+			name: "Empty Array User",
+			password: "password123",
+			organizationType: ["initial"],
+			fetchOptions: {
+				onSuccess: sessionSetter(headers),
+			},
+		});
+
+		const updateRes = await authClient.updateUser({
+			organizationType: [],
+			fetchOptions: {
+				headers,
+			},
+		});
+		expect(updateRes.data?.status).toBe(true);
+
+		const session = await authClient.getSession({
+			fetchOptions: {
+				headers,
+				throw: true,
+			},
+		});
+		expect(session).not.toBeNull();
+		expect(session!.user.organizationType).toEqual([]);
+	});
+});
+
 describe("updateUser", async () => {
 	const sendChangeEmail = vi.fn();
 	let emailVerificationToken = "";
