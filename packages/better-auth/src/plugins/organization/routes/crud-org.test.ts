@@ -549,4 +549,93 @@ describe("organization hooks", async () => {
 		expect(internalOrg).toBeDefined();
 		expect(internalOrg?.name).toBe("Internal Org");
 	});
+
+	/**
+	 * @see https://github.com/better-auth/better-auth/issues/9743
+	 */
+	it("should set updatedAt when creating an organization via user session", async () => {
+		const { auth, signInWithTestUser } = await getTestInstance({
+			plugins: [organization()],
+		});
+		const { headers } = await signInWithTestUser();
+		const result = await auth.api.createOrganization({
+			body: {
+				name: "updatedAt-test-org",
+				slug: "updatedat-test-org",
+			},
+			headers,
+		});
+		expect(result).toBeDefined();
+		expect(result?.createdAt).toBeDefined();
+		expect(result?.createdAt).toBeInstanceOf(Date);
+		expect(result?.updatedAt).toBeDefined();
+		expect(result?.updatedAt).toBeInstanceOf(Date);
+	});
+
+	/**
+	 * @see https://github.com/better-auth/better-auth/issues/9743
+	 */
+	it("should set updatedAt when creating an organization via internal (server-side) call", async () => {
+		const { auth } = await getTestInstance({
+			plugins: [
+				organization({
+					allowUserToCreateOrganization: false,
+				}),
+			],
+		});
+		const newUser = await auth.api.signUpEmail({
+			body: {
+				email: "updatedAt-internal@test.com",
+				password: "password",
+				name: "UpdatedAt Internal User",
+			},
+		});
+		const result = await auth.api.createOrganization({
+			body: {
+				name: "Internal UpdatedAt Org",
+				slug: "internal-updatedat-org",
+				userId: newUser.user.id,
+			},
+		});
+		expect(result).toBeDefined();
+		expect(result?.createdAt).toBeDefined();
+		expect(result?.createdAt).toBeInstanceOf(Date);
+		expect(result?.updatedAt).toBeDefined();
+		expect(result?.updatedAt).toBeInstanceOf(Date);
+	});
+
+	/**
+	 * @see https://github.com/better-auth/better-auth/issues/9743
+	 */
+	it("should set updatedAt on the default team created alongside the organization", async () => {
+		const { auth, signInWithTestUser } = await getTestInstance({
+			plugins: [
+				organization({
+					teams: {
+						enabled: true,
+					},
+				}),
+			],
+		});
+		const { headers } = await signInWithTestUser();
+		const org = await auth.api.createOrganization({
+			body: {
+				name: "team-updatedat-org",
+				slug: "team-updatedat-org",
+			},
+			headers,
+		});
+		expect(org).toBeDefined();
+
+		const fullOrg = await auth.api.getFullOrganization({
+			query: { organizationId: org.id },
+			headers,
+		});
+		expect(fullOrg).toBeDefined();
+		expect(fullOrg?.teams).toBeDefined();
+		expect(fullOrg?.teams?.length).toBeGreaterThan(0);
+		const defaultTeam = fullOrg?.teams?.[0];
+		expect(defaultTeam?.createdAt).toBeDefined();
+		expect(defaultTeam?.updatedAt).toBeDefined();
+	});
 });
