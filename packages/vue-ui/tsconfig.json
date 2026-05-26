@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "jsx": "preserve" },
+  "include": ["./src", "./package.json"],
+  "references": [{ "path": "../ui-core/tsconfig.json" }]
+}

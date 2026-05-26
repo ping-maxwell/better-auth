@@ -74,6 +74,16 @@
       }
     },
     {
+      "includes": ["**/*.svelte"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.json"],
       "formatter": {
         "indentStyle": "space",
