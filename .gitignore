@@ -211,3 +211,6 @@ state.txt
 
 .cursor/
 .claude/worktrees
+
+# Conductor app logo (committed to personal fork via `git add -f`, kept out of upstream)
+/public/logo.png
