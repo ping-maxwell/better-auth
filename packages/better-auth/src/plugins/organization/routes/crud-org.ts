@@ -18,6 +18,7 @@ import type {
 	TeamMember,
 } from "../schema";
 import type { OrganizationOptions } from "../types";
+import type { Prettify } from "../../../types/helper";
 
 const baseOrganizationSchema = z.object({
 	name: z.string().min(1).meta({
@@ -719,7 +720,7 @@ export const getFullOrganization = <O extends OrganizationOptions>(
 				? {
 						members: InferMember<O>[];
 						invitations: InferInvitation<O>[];
-						teams: InferTeam<O>[];
+						teams: Prettify<InferTeam<O> & { members: TeamMember[] }>[];
 					} & InferOrganization<O>
 				: {
 						members: InferMember<O>[];
@@ -860,7 +861,7 @@ export const setActiveOrganization = <O extends OrganizationOptions>(
 				? {
 						members: InferMember<O>[];
 						invitations: InferInvitation<O>[];
-						teams: InferTeam<O>[];
+						teams: Prettify<InferTeam<O> & { members: TeamMember[] }>[];
 					} & InferOrganization<O>
 				: {
 						members: InferMember<O>[];
