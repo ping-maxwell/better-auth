@@ -296,6 +296,73 @@ describe("generate", async () => {
 		);
 	});
 
+	/**
+	 * @see https://github.com/better-auth/better-auth/issues/8967
+	 */
+	it("should generate prisma schema with custom model AND field names for organization plugin", async () => {
+		const schema = await generatePrismaSchema({
+			file: "test.prisma",
+			adapter: prismaAdapter(
+				{},
+				{
+					provider: "postgresql",
+				},
+			)({} as BetterAuthOptions),
+			options: {
+				database: prismaAdapter(
+					{},
+					{
+						provider: "postgresql",
+					},
+				),
+				plugins: [
+					organization({
+						schema: {
+							organization: {
+								modelName: "workspace",
+							},
+							member: {
+								modelName: "workspaceMember",
+								fields: {
+									organizationId: "workspaceId",
+								},
+							},
+							invitation: {
+								modelName: "workspaceInvitation",
+								fields: {
+									organizationId: "workspaceId",
+								},
+							},
+						},
+					}),
+				],
+			},
+		});
+
+		// Model names should be correctly renamed
+		expect(schema.code).toContain("model Workspace {");
+		expect(schema.code).toContain("model WorkspaceMember {");
+		expect(schema.code).toContain("model WorkspaceInvitation {");
+
+		// Model should NOT contain the default names
+		expect(schema.code).not.toContain("model Organization {");
+		expect(schema.code).not.toContain("model Member {");
+		expect(schema.code).not.toContain("model Invitation {");
+
+		// Field names should be correctly renamed on WorkspaceMember
+		expect(schema.code).toMatch(/model WorkspaceMember[\s\S]*?workspaceId\s+String/);
+		// Should NOT have organizationId in WorkspaceMember
+		expect(schema.code).not.toMatch(/model WorkspaceMember[\s\S]*?organizationId\s+String/);
+
+		// Field names should be correctly renamed on WorkspaceInvitation
+		expect(schema.code).toMatch(/model WorkspaceInvitation[\s\S]*?workspaceId\s+String/);
+		// Should NOT have organizationId in WorkspaceInvitation
+		expect(schema.code).not.toMatch(/model WorkspaceInvitation[\s\S]*?organizationId\s+String/);
+
+		// Relations should reference the correct custom field names
+		expect(schema.code).toContain("relation(fields: [workspaceId]");
+	});
+
 	it("should generate drizzle schema", async () => {
 		const schema = await generateDrizzleSchema({
 			file: "test.drizzle",
