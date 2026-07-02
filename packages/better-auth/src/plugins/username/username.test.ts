@@ -671,6 +671,55 @@ describe("post normalization flow", async () => {
 	});
 });
 
+/**
+ * @see https://github.com/better-auth/better-auth/issues/9469
+ */
+describe("username signIn callbackURL redirect", async () => {
+	const { client, sessionSetter } = await getTestInstance(
+		{
+			plugins: [username()],
+		},
+		{
+			clientOptions: {
+				plugins: [usernameClient()],
+			},
+		},
+	);
+
+	it("should return redirect and url when callbackURL is provided", async () => {
+		await client.signUp.email({
+			email: "redirect-test@email.com",
+			username: "redirect_user",
+			password: "test-password",
+			name: "Redirect Test",
+		});
+
+		const res = await client.signIn.username({
+			username: "redirect_user",
+			password: "test-password",
+			callbackURL: "/dashboard",
+		});
+
+		expect(res.error).toBeNull();
+		expect(res.data?.token).toBeDefined();
+		expect(res.data?.user).toBeDefined();
+		expect(res.data?.redirect).toBe(true);
+		expect(res.data?.url).toBe("/dashboard");
+	});
+
+	it("should return redirect false when no callbackURL is provided", async () => {
+		const res = await client.signIn.username({
+			username: "redirect_user",
+			password: "test-password",
+		});
+
+		expect(res.error).toBeNull();
+		expect(res.data?.token).toBeDefined();
+		expect(res.data?.redirect).toBe(false);
+		expect(res.data?.url).toBeUndefined();
+	});
+});
+
 describe("username email verification flow (no info leak)", async () => {
 	const { client } = await getTestInstance(
 		{
