@@ -1,11 +1,12 @@
 import type { BetterAuthOptions, BetterAuthPlugin } from "@better-auth/core";
+import type { Endpoint, StrictEndpoint } from "better-call";
 import type { GoogleProfile, JoinConfig, JoinOption } from "better-auth/types";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { createAuthEndpoint } from "../api";
+import { createAuthEndpoint, sessionMiddleware } from "../api";
 import { betterAuth } from "../auth/minimal";
 import type { InferCtx } from "../client/path-to-object";
 import { tanstackStartCookies } from "../integrations/tanstack-start";
-import { admin, organization, twoFactor } from "../plugins";
+import { admin, openAPI, organization, twoFactor } from "../plugins";
 import { getTestInstance } from "../test-utils/test-instance";
 import type { Auth } from "./auth";
 import type { HasRequiredKeys } from "./helper";
@@ -385,5 +386,91 @@ describe("any-poisoning guards", () => {
 		type Codes = (typeof auth)["$ERROR_CODES"];
 		expectTypeOf<Codes>().not.toBeAny();
 		expectTypeOf<Codes>().toHaveProperty("SESSION_EXPIRED");
+	});
+});
+
+/**
+ * @see https://github.com/better-auth/better-auth/issues/9433
+ */
+describe("StrictEndpoint and Endpoint type compatibility", () => {
+	it("StrictEndpoint should be assignable to Endpoint", () => {
+		type TestStrict = StrictEndpoint<
+			"/test",
+			{ method: "GET" },
+			{ ok: true }
+		>;
+		expectTypeOf<TestStrict>().toMatchTypeOf<Endpoint>();
+	});
+
+	it("StrictEndpoint with use array should be assignable to Endpoint", () => {
+		const ep = createAuthEndpoint(
+			"/test-with-use",
+			{
+				method: "GET",
+				use: [sessionMiddleware],
+			},
+			async () => ({ ok: true }),
+		);
+		expectTypeOf<typeof ep>().toMatchTypeOf<Endpoint>();
+	});
+
+	it("openAPI plugin endpoints should satisfy BetterAuthPlugin", () => {
+		const plugin = openAPI();
+		expectTypeOf(plugin).toMatchTypeOf<BetterAuthPlugin>();
+	});
+
+	it("auth.api should not be any with openAPI plugin", async () => {
+		const { auth } = await getTestInstance({
+			plugins: [openAPI()],
+		});
+		type Api = typeof auth.api;
+		expectTypeOf<Api>().not.toBeAny();
+		expectTypeOf<Api>().toHaveProperty("getSession");
+		expectTypeOf<Api>().toHaveProperty("generateOpenAPISchema");
+	});
+
+	it("auth.api should not be any with empty plugins", async () => {
+		const { auth } = await getTestInstance({
+			plugins: [],
+		});
+		type Api = typeof auth.api;
+		expectTypeOf<Api>().not.toBeAny();
+		expectTypeOf<Api>().toHaveProperty("getSession");
+		expectTypeOf<Api>().toHaveProperty("signInEmail");
+	});
+
+	it("plugin with middleware in use array should preserve auth.api types", async () => {
+		const pluginWithMiddleware = {
+			id: "test-middleware-plugin",
+			endpoints: {
+				testWithMiddleware: createAuthEndpoint(
+					"/test-with-middleware",
+					{
+						method: "GET",
+						use: [sessionMiddleware],
+					},
+					async () => ({ result: true }),
+				),
+			},
+		} satisfies BetterAuthPlugin;
+
+		const { auth } = await getTestInstance({
+			plugins: [pluginWithMiddleware],
+		});
+
+		type Api = typeof auth.api;
+		expectTypeOf<Api>().not.toBeAny();
+		expectTypeOf<Api>().toHaveProperty("getSession");
+		expectTypeOf<Api>().toHaveProperty("testWithMiddleware");
+	});
+
+	it("betterAuth() with openAPI should preserve api types", () => {
+		const auth = betterAuth({
+			plugins: [openAPI()],
+		});
+		type Api = typeof auth.api;
+		expectTypeOf<Api>().not.toBeAny();
+		expectTypeOf<Api>().toHaveProperty("getSession");
+		expectTypeOf<Api>().toHaveProperty("generateOpenAPISchema");
 	});
 });
