@@ -319,6 +319,76 @@ describe("testUtils plugin", async () => {
 		});
 	});
 
+	/**
+	 * Validates limitations of testUtils when session cookie cache uses JWE — helpers only
+	 * mint `session_token` and omit `session_data`, so requests cannot authenticate when the
+	 * server-side session row is absent (stateless / edge deployments).
+	 *
+	 * @see https://github.com/better-auth/better-auth/issues/9271
+	 */
+	describe("cookieCache JWE + testUtils (stateless topology)", async () => {
+		const { auth } = await getTestInstance({
+			plugins: [testUtils()],
+			session: {
+				cookieCache: {
+					enabled: true,
+					strategy: "jwe",
+					maxAge: 60 * 60,
+				},
+			},
+		});
+
+		it("should mint test cookies with only session_token, not session_data", async () => {
+			const ctx = await auth.$context;
+			const test = ctx.test;
+
+			const user = test.createUser({
+				email: `jwe-cache-names-${Date.now()}@example.com`,
+			});
+			await test.saveUser(user);
+
+			const cookies = await test.getCookies({ userId: user.id });
+			const names = cookies.map((c) => c.name);
+
+			expect(names.some((n) => n.includes("session_data"))).toBe(false);
+			expect(names.some((n) => n.includes("session_token"))).toBe(true);
+			expect(cookies).toHaveLength(1);
+
+			const { cookies: loginCookies, headers } = await test.login({
+				userId: user.id,
+			});
+
+			expect(
+				loginCookies.map((c) => c.name).some((n) => n.includes("session_data")),
+			).toBe(false);
+			expect(headers.get("cookie")).not.toContain("session_data");
+
+			await test.deleteUser(user.id);
+		});
+
+		it("should return null session once the backing session row is removed (no JWE fallback)", async () => {
+			const ctx = await auth.$context;
+			const test = ctx.test;
+
+			const user = test.createUser({
+				email: `jwe-cache-db-${Date.now()}@example.com`,
+			});
+			await test.saveUser(user);
+
+			const { headers, token } = await test.login({ userId: user.id });
+
+			const sessionBefore = await auth.api.getSession({ headers });
+			expect(sessionBefore?.user.id).toBe(user.id);
+
+			await ctx.internalAdapter.deleteSession(token);
+
+			const sessionAfter = await auth.api.getSession({ headers });
+			expect(sessionAfter).toBeNull();
+
+			await test.deleteUser(user.id);
+		});
+	});
+
 	describe("integration test example", async () => {
 		const { auth } = await getTestInstance({
 			plugins: [testUtils()],
