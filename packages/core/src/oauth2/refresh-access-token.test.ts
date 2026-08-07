@@ -87,4 +87,31 @@ describe("refreshAccessToken", () => {
 
 		expect(tokens.refreshTokenExpiresAt).toBeUndefined();
 	});
+
+	/**
+	 * Twitch's token refresh API returns `scope` as a string for one scope and as a string[]
+	 * for multiple scopes. Better Auth currently assumes a space-delimited string.
+	 *
+	 * @see https://github.com/better-auth/better-auth/issues/9076
+	 * @see https://dev.twitch.tv/docs/authentication/refresh-tokens/
+	 */
+	it("throws when provider returns scope as an array (e.g. Twitch multi-scope refresh)", async () => {
+		mockedBetterFetch.mockResolvedValueOnce({
+			data: {
+				access_token: "new-access-token",
+				expires_in: 3600,
+				token_type: "Bearer",
+				scope: ["user:read:email", "moderator:read:followers"],
+			},
+			error: null,
+		});
+
+		await expect(
+			refreshAccessToken({
+				refreshToken: "old-refresh-token",
+				options: { clientId: "test-client", clientSecret: "test-secret" },
+				tokenEndpoint: "https://id.twitch.tv/oauth2/token",
+			}),
+		).rejects.toThrow(TypeError);
+	});
 });
