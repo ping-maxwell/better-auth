@@ -24,6 +24,7 @@ import type {
 	InferMember,
 	InferTeam,
 	InvitationStatus,
+	TeamMember,
 } from "./schema";
 import type { OrganizationOptions } from "./types";
 
@@ -2790,6 +2791,7 @@ describe("Additional Fields", async () => {
 			teamRequiredField: string;
 			teamOptionalField?: string | undefined;
 			teamHiddenField?: string | undefined;
+			members: TeamMember[];
 		}>();
 	});
 
@@ -3122,7 +3124,17 @@ describe("Additional Fields", async () => {
 			someHiddenField?: string | undefined;
 			members: ExpectedMembers;
 			invitations: ExpectedInvitations;
-			teams: ExpectedTeams;
+			teams: {
+				id: string;
+				name: string;
+				organizationId: string;
+				createdAt: Date;
+				updatedAt?: Date | undefined;
+				teamRequiredField: string;
+				teamOptionalField?: string | undefined;
+				teamHiddenField?: string | undefined;
+				members: TeamMember[];
+			}[];
 		}>();
 	});
 
